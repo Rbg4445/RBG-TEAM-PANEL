@@ -138,40 +138,35 @@ else()
 endif()
 
 # 6. libdatachannel (Required for Server, and Client voice in future)
-if(WIN32)
-    # Use pre-cloned local source to avoid git network issues
+# We can use deps/libdatachannel if it exists, on any platform!
+if(EXISTS "${CMAKE_SOURCE_DIR}/deps/libdatachannel/CMakeLists.txt")
     set(LIBDATACHANNEL_LOCAL_DIR "${CMAKE_SOURCE_DIR}/deps/libdatachannel")
-    if(NOT EXISTS "${LIBDATACHANNEL_LOCAL_DIR}/CMakeLists.txt")
-        message(FATAL_ERROR
-            "deps/libdatachannel not found!\n"
-            "Run this once in the project root:\n"
-            "  git clone --depth 1 --recurse-submodules "
-            "https://github.com/paullouisageneau/libdatachannel.git deps/libdatachannel")
-    endif()
     set(USE_OPENSSL ON  CACHE BOOL "" FORCE)
     set(USE_GNUTLS  OFF CACHE BOOL "" FORCE)
     set(USE_MBEDTLS OFF CACHE BOOL "" FORCE)
     set(USE_LZ4     OFF CACHE BOOL "" FORCE)
     set(NO_EXAMPLES ON  CACHE BOOL "" FORCE)
     set(NO_TESTS    ON  CACHE BOOL "" FORCE)
-    # Point to installed OpenSSL-Win64 (ShiningLight.OpenSSL.Dev)
-    if(NOT OPENSSL_ROOT_DIR)
-        foreach(_ssl_dir
-                "C:/Program Files/OpenSSL-Win64"
-                "C:/Program Files/OpenSSL"
-                "C:/OpenSSL-Win64")
-            if(EXISTS "${_ssl_dir}/include/openssl/ssl.h")
-                set(OPENSSL_ROOT_DIR "${_ssl_dir}" CACHE PATH "" FORCE)
-                break()
-            endif()
-        endforeach()
+    if(WIN32)
+        # Point to installed OpenSSL-Win64 (ShiningLight.OpenSSL.Dev)
+        if(NOT OPENSSL_ROOT_DIR)
+            foreach(_ssl_dir
+                    "C:/Program Files/OpenSSL-Win64"
+                    "C:/Program Files/OpenSSL"
+                    "C:/OpenSSL-Win64")
+                if(EXISTS "${_ssl_dir}/include/openssl/ssl.h")
+                    set(OPENSSL_ROOT_DIR "${_ssl_dir}" CACHE PATH "" FORCE)
+                    break()
+                endif()
+            endforeach()
+        endif()
     endif()
     add_subdirectory("${LIBDATACHANNEL_LOCAL_DIR}" libdatachannel EXCLUDE_FROM_ALL)
 else()
     find_path(LIBDATACHANNEL_INCLUDE_DIR NAMES rtc/rtc.hpp)
     find_library(LIBDATACHANNEL_LIBRARY NAMES datachannel)
     if(NOT LIBDATACHANNEL_INCLUDE_DIR OR NOT LIBDATACHANNEL_LIBRARY)
-        message(FATAL_ERROR "System libdatachannel not found.")
+        message(FATAL_ERROR "deps/libdatachannel not found and system libdatachannel not found.\nPlease run this in the project root:\n  git clone --depth 1 --recurse-submodules https://github.com/paullouisageneau/libdatachannel.git deps/libdatachannel")
     endif()
     add_library(datachannel_lib INTERFACE)
     target_include_directories(datachannel_lib INTERFACE ${LIBDATACHANNEL_INCLUDE_DIR})
