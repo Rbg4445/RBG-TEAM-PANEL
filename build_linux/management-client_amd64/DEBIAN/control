@@ -1,0 +1,9 @@
+Package: management-client
+Version: 1.0.0
+Section: utils
+Priority: optional
+Architecture: amd64
+Maintainer: RBG Team
+Depends: libvulkan1, libglfw3, libenet7, libsqlite3-0, libssl3
+Description: RBG Team Management Client Panel
+ Client application for managing servers, chat, and voice calls.

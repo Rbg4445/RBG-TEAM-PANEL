@@ -96,7 +96,10 @@ void ClientVoice::CreatePeerConnection(const std::string& targetUser, bool isOff
     });
 
     if (isOffer) {
-        m_audioChannel = m_peerConnection->createDataChannel("audio");
+        rtc::DataChannelInit audioInit;
+        audioInit.reliability.unordered = true;
+        audioInit.reliability.maxRetransmits = 0;
+        m_audioChannel = m_peerConnection->createDataChannel("audio", audioInit);
         m_screenChannel = m_peerConnection->createDataChannel("screen");
 
         m_audioChannel->onOpen([this]() {
@@ -382,6 +385,7 @@ void ClientVoice::StartAudio() {
     config.playback.format  = ma_format_s16;
     config.playback.channels = 1;
     config.sampleRate       = 24000;
+    config.periodSizeInMilliseconds = 20;
     config.dataCallback     = audio_callback;
     config.pUserData        = this;
 

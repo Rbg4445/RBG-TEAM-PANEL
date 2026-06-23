@@ -12,6 +12,7 @@
 #include "Roles.h"
 #include "Voice.h"
 #include "Utils.h"
+#include "logo_data.h"
 #include <iostream>
 #include <chrono>
 #include <iomanip>
@@ -243,6 +244,7 @@ struct DynamicVulkanTexture {
 };
 
 static DynamicVulkanTexture g_ScreenShareTexture;
+static DynamicVulkanTexture g_LogoTexture;
 
 enum class ActiveTab { CHAT, VOICE, MODERATION, SETTINGS };
 static ActiveTab g_ActiveTab = ActiveTab::CHAT;
@@ -295,6 +297,15 @@ int RunClientApp()
     glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
     GLFWwindow* window = glfwCreateWindow(1280, 720, "RBG TEAM Yonetim Paneli", nullptr, nullptr);
     if (!window) { std::cerr << "Window creation failed" << std::endl; return -1; }
+
+    // Set window icon
+    {
+        GLFWimage images[1];
+        images[0].width = LOGO_WIDTH;
+        images[0].height = LOGO_HEIGHT;
+        images[0].pixels = const_cast<unsigned char*>(LOGO_RGBA);
+        glfwSetWindowIcon(window, 1, images);
+    }
 
     if (!SetupVulkan(window)) { std::cerr << "Vulkan setup failed" << std::endl; return -1; }
 
@@ -385,8 +396,12 @@ int RunClientApp()
         std::cout << "ImGui fonts uploaded" << std::endl;
     }
 
+    // Load embedded logo texture
+    g_LogoTexture.Create(LOGO_WIDTH, LOGO_HEIGHT);
+    g_LogoTexture.Update(LOGO_RGBA);
+
     // UI state
-    char serverIp[64]       = "127.0.0.1";
+    char serverIp[64]       = "147.185.221.180:40632";
     char username[64]       = "";
     char password[64]       = "";
     char messageBuffer[256] = "";
@@ -492,7 +507,7 @@ int RunClientApp()
         if (!ClientAuth::GetInstance().IsLoggedIn()) {
             ImGui::SetNextWindowPos(ImVec2(io.DisplaySize.x*0.5f, io.DisplaySize.y*0.5f),
                                     ImGuiCond_Always, ImVec2(0.5f, 0.5f));
-            ImGui::SetNextWindowSize(ImVec2(440, 390), ImGuiCond_Always);
+            ImGui::SetNextWindowSize(ImVec2(440, 520), ImGuiCond_Always); // Increased height to fit logo and fields
             
             ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 16.f);
             ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(28.f, 28.f));
@@ -502,6 +517,13 @@ int RunClientApp()
             ImGui::Begin("##Login", nullptr,
                 ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoResize |
                 ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoTitleBar);
+
+            // Logo Image
+            if (g_LogoTexture.DescriptorSet != VK_NULL_HANDLE) {
+                ImGui::SetCursorPosX((440 - 80.f) * 0.5f);
+                ImGui::Image((ImTextureID)g_LogoTexture.DescriptorSet, ImVec2(80.f, 80.f));
+                ImGui::Dummy(ImVec2(0, 4));
+            }
 
             // Logo / Title (Premium look)
             float textW = ImGui::CalcTextSize("RBG TEAM").x;
@@ -516,64 +538,145 @@ int RunClientApp()
             ImGui::Separator();
             ImGui::Dummy(ImVec2(0, 10));
 
-            // IP input
-            ImGui::Text("Sunucu Adresi (IP:Port):");
-            ImGui::Dummy(ImVec2(0, 2));
-            ImGui::SetNextItemWidth(-1);
-            ImGui::InputText("##ip", serverIp, sizeof(serverIp));
-            ImGui::Dummy(ImVec2(0, 8));
+            static bool showRegister = false;
+            static char regUsername[64] = "";
+            static char regPassword[64] = "";
+            static char regConfirmPassword[64] = "";
 
-            // Username input
-            ImGui::Text("Kullanici Adi:");
-            ImGui::Dummy(ImVec2(0, 2));
-            ImGui::SetNextItemWidth(-1);
-            ImGui::InputText("##usr", username, sizeof(username));
-            ImGui::Dummy(ImVec2(0, 8));
+            if (!showRegister) {
+                // Username input
+                ImGui::Text("Kullanici Adi:");
+                ImGui::Dummy(ImVec2(0, 2));
+                ImGui::SetNextItemWidth(-1);
+                ImGui::InputText("##usr", username, sizeof(username));
+                ImGui::Dummy(ImVec2(0, 8));
 
-            // Password input
-            ImGui::Text("Sifre:");
-            ImGui::Dummy(ImVec2(0, 2));
-            ImGui::SetNextItemWidth(-1);
-            bool enterPressed = ImGui::InputText("##pwd", password, sizeof(password),
-                ImGuiInputTextFlags_Password | ImGuiInputTextFlags_EnterReturnsTrue);
-            ImGui::Dummy(ImVec2(0, 16));
+                // Password input
+                ImGui::Text("Sifre:");
+                ImGui::Dummy(ImVec2(0, 2));
+                ImGui::SetNextItemWidth(-1);
+                bool enterPressed = ImGui::InputText("##pwd", password, sizeof(password),
+                    ImGuiInputTextFlags_Password | ImGuiInputTextFlags_EnterReturnsTrue);
+                ImGui::Dummy(ImVec2(0, 16));
 
-            bool doLogin = enterPressed;
-            
-            ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.18f, 0.42f, 0.78f, 1.0f));
-            ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.22f, 0.52f, 0.90f, 1.0f));
-            ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(0.14f, 0.35f, 0.68f, 1.0f));
-            
-            if (ClientChat::GetInstance().IsConnected()) {
-                if (ImGui::Button("Giris Yap", ImVec2(-1, 38)) || doLogin) {
-                    ClientChat::GetInstance().SendLogin(username, password);
-                    AddToast("Giris yapiliyor...", ToastType::INFO);
+                bool doLogin = enterPressed;
+                
+                ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.18f, 0.42f, 0.78f, 1.0f));
+                ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.22f, 0.52f, 0.90f, 1.0f));
+                ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(0.14f, 0.35f, 0.68f, 1.0f));
+                
+                if (ClientChat::GetInstance().IsConnected()) {
+                    if (ImGui::Button("Giris Yap", ImVec2(-1, 38)) || doLogin) {
+                        ClientChat::GetInstance().SendLogin(username, password);
+                        AddToast("Giris yapiliyor...", ToastType::INFO);
+                    }
+                } else {
+                    if (ImGui::Button("Giris Yap", ImVec2(-1, 38)) || doLogin) {
+                        // Parse host:port format
+                        std::string ipStr(serverIp);
+                        std::string host = ipStr;
+                        int port = 7777;
+                        size_t colonPos = ipStr.rfind(':');
+                        if (colonPos != std::string::npos) {
+                            host = ipStr.substr(0, colonPos);
+                            try { port = std::stoi(ipStr.substr(colonPos + 1)); }
+                            catch (...) { port = 7777; }
+                        }
+                        if (ClientChat::GetInstance().Connect(host, port))
+                            AddToast("Sunucuya baglaniliyor...", ToastType::INFO);
+                        else
+                            AddToast("Baglanti basarisiz!", ToastType::ERR);
+                    }
+                }
+                ImGui::PopStyleColor(3);
+
+                ImGui::Dummy(ImVec2(0, 4));
+                if (ImGui::Button("Yeni Hesap Olustur", ImVec2(-1, 30))) {
+                    showRegister = true;
+                    ClientChat::GetInstance().ClearRegisterResponse();
+                    memset(regUsername, 0, sizeof(regUsername));
+                    memset(regPassword, 0, sizeof(regPassword));
+                    memset(regConfirmPassword, 0, sizeof(regConfirmPassword));
                 }
             } else {
-                if (ImGui::Button("Baglan ve Giris Yap", ImVec2(-1, 38)) || doLogin) {
-                    // Parse host:port format
-                    std::string ipStr(serverIp);
-                    std::string host = ipStr;
-                    int port = 7777;
-                    size_t colonPos = ipStr.rfind(':');
-                    if (colonPos != std::string::npos) {
-                        host = ipStr.substr(0, colonPos);
-                        try { port = std::stoi(ipStr.substr(colonPos + 1)); }
-                        catch (...) { port = 7777; }
+                ImGui::Text("Kullanici Adi:");
+                ImGui::Dummy(ImVec2(0, 2));
+                ImGui::SetNextItemWidth(-1);
+                ImGui::InputText("##regusr", regUsername, sizeof(regUsername));
+                ImGui::Dummy(ImVec2(0, 8));
+
+                ImGui::Text("Sifre:");
+                ImGui::Dummy(ImVec2(0, 2));
+                ImGui::SetNextItemWidth(-1);
+                ImGui::InputText("##regpwd", regPassword, sizeof(regPassword), ImGuiInputTextFlags_Password);
+                ImGui::Dummy(ImVec2(0, 8));
+
+                ImGui::Text("Sifre Tekrar:");
+                ImGui::Dummy(ImVec2(0, 2));
+                ImGui::SetNextItemWidth(-1);
+                ImGui::InputText("##regconfirm", regConfirmPassword, sizeof(regConfirmPassword), ImGuiInputTextFlags_Password);
+                ImGui::Dummy(ImVec2(0, 16));
+
+                ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.18f, 0.6f, 0.38f, 1.0f));
+                ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.22f, 0.7f, 0.45f, 1.0f));
+                ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(0.14f, 0.5f, 0.32f, 1.0f));
+
+                if (ClientChat::GetInstance().IsConnected()) {
+                    if (ImGui::Button("Kayit Ol", ImVec2(-1, 38))) {
+                        if (strlen(regUsername) == 0 || strlen(regPassword) == 0) {
+                            AddToast("Kullanici adi ve sifre bos olamaz!", ToastType::ERR);
+                        } else if (strcmp(regPassword, regConfirmPassword) != 0) {
+                            AddToast("Sifreler uyusmuyor!", ToastType::ERR);
+                        } else {
+                            ClientChat::GetInstance().SendRegister(regUsername, regPassword);
+                            AddToast("Kayit talebi gonderiliyor...", ToastType::INFO);
+                        }
                     }
-                    if (ClientChat::GetInstance().Connect(host, port))
-                        AddToast("Sunucuya baglaniliyor...", ToastType::INFO);
-                    else
-                        AddToast("Baglanti basarisiz!", ToastType::ERR);
+                } else {
+                    if (ImGui::Button("Kayit Ol", ImVec2(-1, 38))) {
+                        if (strlen(regUsername) == 0 || strlen(regPassword) == 0) {
+                            AddToast("Kullanici adi ve sifre bos olamaz!", ToastType::ERR);
+                        } else if (strcmp(regPassword, regConfirmPassword) != 0) {
+                            AddToast("Sifreler uyusmuyor!", ToastType::ERR);
+                        } else {
+                            // Connect first
+                            std::string ipStr(serverIp);
+                            std::string host = ipStr;
+                            int port = 7777;
+                            size_t colonPos = ipStr.rfind(':');
+                            if (colonPos != std::string::npos) {
+                                host = ipStr.substr(0, colonPos);
+                                try { port = std::stoi(ipStr.substr(colonPos + 1)); }
+                                catch (...) { port = 7777; }
+                            }
+                            if (ClientChat::GetInstance().Connect(host, port))
+                                AddToast("Sunucuya baglaniliyor...", ToastType::INFO);
+                            else
+                                AddToast("Baglanti basarisiz!", ToastType::ERR);
+                        }
+                    }
+                }
+                ImGui::PopStyleColor(3);
+
+                ImGui::Dummy(ImVec2(0, 4));
+                if (ImGui::Button("Giris Ekranina Don", ImVec2(-1, 30))) {
+                    showRegister = false;
+                }
+
+                if (ClientChat::GetInstance().HasRegisterResponse()) {
+                    ImGui::Dummy(ImVec2(0, 6));
+                    ImVec4 textCol = ClientChat::GetInstance().IsRegisterSuccess() ? ImVec4(0.3f, 1.f, 0.3f, 1.f) : ImVec4(1.f, 0.3f, 0.3f, 1.f);
+                    ImGui::PushStyleColor(ImGuiCol_Text, textCol);
+                    ImGui::TextWrapped("%s", ClientChat::GetInstance().GetRegisterMessage().c_str());
+                    ImGui::PopStyleColor();
                 }
             }
-            ImGui::PopStyleColor(3);
 
             // Error display
             if (ClientChat::GetInstance().HasConnectionFailed()) {
                 ImGui::Dummy(ImVec2(0, 6));
                 ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.f, 0.3f, 0.3f, 1.f));
-                ImGui::TextWrapped("Hata: Sunucuya baglanamadi! (%s)", serverIp);
+                ImGui::TextWrapped("Hata: Sunucuya baglanamadi!");
                 ImGui::PopStyleColor();
             } else if (!ClientChat::GetInstance().GetLoginError().empty()) {
                 ImGui::Dummy(ImVec2(0, 6));
@@ -622,6 +725,7 @@ int RunClientApp()
 
     vkDeviceWaitIdle(g_Device);
     g_ScreenShareTexture.Destroy();
+    g_LogoTexture.Destroy();
     ClientVoice::GetInstance().Close();
     ClientChat::GetInstance().Close();
     ImGui_ImplVulkan_Shutdown();
@@ -651,7 +755,8 @@ void RenderDashboard(const ImGuiIO& io, char* messageBuffer, char* serverIp)
     const std::string& role     = ClientAuth::GetInstance().GetRole();
     const std::string& username = ClientAuth::GetInstance().GetUsername();
 
-    bool isOwner = (role == "Owner");
+    bool isRBG   = (role == "RBG");
+    bool isOwner = (role == "Owner" || isRBG);
     bool isAdmin = (role == "Admin" || isOwner);
     bool isMod   = (role == "Mod"   || isAdmin);
 
@@ -1136,6 +1241,57 @@ void RenderDashboard(const ImGuiIO& io, char* messageBuffer, char* serverIp)
             }
             ImGui::EndTable();
         }
+
+        // Onay bekleyen hesaplar tablosu
+        ImGui::Dummy(ImVec2(0, 14));
+        ImGui::Separator();
+        ImGui::Dummy(ImVec2(0, 14));
+
+        ImGui::TextColored(ImVec4(0.2f, 0.8f, 0.8f, 1.f), "Onay Bekleyen Hesaplar");
+        ImGui::Dummy(ImVec2(0, 6));
+
+        const auto& pending = ClientChat::GetInstance().GetPendingUsers();
+        if (pending.empty()) {
+            ImGui::TextDisabled("Onay bekleyen yeni hesap bulunmamaktadır.");
+        } else {
+            if (ImGui::BeginTable("##PendingApprovalsTable", 2, ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg | ImGuiTableFlags_Resizable)) {
+                ImGui::TableSetupColumn("Kullanici Adi", ImGuiTableColumnFlags_WidthFixed, 300.f);
+                ImGui::TableSetupColumn("Islemler", ImGuiTableColumnFlags_WidthStretch);
+                ImGui::TableHeadersRow();
+
+                for (const auto& pendingUser : pending) {
+                    ImGui::TableNextRow();
+                    ImGui::TableNextColumn();
+                    ImGui::Text("%s", pendingUser.c_str());
+
+                    ImGui::TableNextColumn();
+                    
+                    // Approve button
+                    std::string approveBtnId = "Onayla##" + pendingUser;
+                    ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.1f, 0.6f, 0.1f, 0.7f));
+                    ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.15f, 0.8f, 0.15f, 1.f));
+                    if (ImGui::SmallButton(approveBtnId.c_str())) {
+                        ClientChat::GetInstance().SendApproveUser(pendingUser);
+                        AddToast("Kullanici onaylandi: " + pendingUser, ToastType::SUCCESS);
+                    }
+                    ImGui::PopStyleColor(2);
+
+                    ImGui::SameLine();
+
+                    // Reject button
+                    std::string rejectBtnId = "Reddet##" + pendingUser;
+                    ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.6f, 0.1f, 0.1f, 0.7f));
+                    ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.8f, 0.15f, 0.15f, 1.f));
+                    if (ImGui::SmallButton(rejectBtnId.c_str())) {
+                        ClientChat::GetInstance().SendRejectUser(pendingUser);
+                        AddToast("Kullanici reddedildi: " + pendingUser, ToastType::WARNING);
+                    }
+                    ImGui::PopStyleColor(2);
+                }
+                ImGui::EndTable();
+            }
+        }
+
         ImGui::EndChild();
     }
 
@@ -1209,7 +1365,6 @@ void RenderDashboard(const ImGuiIO& io, char* messageBuffer, char* serverIp)
 
         // 3. Server & Client Connection Details
         ImGui::Text("Bağlantı Bilgileri:");
-        ImGui::BulletText("Bağlantı Adresi: %s", serverIp);
         ImGui::BulletText("İstemci Versiyonu: v2.0-Redesign");
         ImGui::BulletText("Geliştirici: RBG Team Yazılım Ekibi");
 
@@ -1232,6 +1387,13 @@ void RenderDashboard(const ImGuiIO& io, char* messageBuffer, char* serverIp)
 
     // ---- RIGHT SIDEBAR (240px) ----
     ImGui::BeginChild("##Sidebar", ImVec2(sidebarW, contentH), true, ImGuiWindowFlags_NoScrollbar);
+
+    // Sidebar Logo Header
+    if (g_LogoTexture.DescriptorSet != VK_NULL_HANDLE) {
+        ImGui::SetCursorPosX((sidebarW - 56.f) * 0.5f - 8.f);
+        ImGui::Image((ImTextureID)g_LogoTexture.DescriptorSet, ImVec2(56.f, 56.f));
+        ImGui::Dummy(ImVec2(0, 4));
+    }
 
     ImGui::TextDisabled("Odalar & Yonetim");
     ImGui::Dummy(ImVec2(0, 4));

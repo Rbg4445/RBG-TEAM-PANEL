@@ -34,6 +34,9 @@ public:
 
     // Actions
     void SendLogin(const std::string& username, const std::string& password);
+    void SendRegister(const std::string& username, const std::string& password);
+    void SendApproveUser(const std::string& username);
+    void SendRejectUser(const std::string& username);
     void SendChatMessage(const std::string& content, int64_t replyToId = 0);
     void SendKick(const std::string& username);
     void SendVoiceSignal(const nlohmann::json& data);
@@ -49,6 +52,11 @@ public:
     const std::string& GetLoginError() const { return m_loginError; }
     const std::vector<ClientChatMessage>& GetMessages() const { return m_messages; }
     const std::vector<OnlineUser>& GetOnlineUsers() const { return m_onlineUsers; }
+    const std::vector<std::string>& GetPendingUsers() const { return m_pendingUsers; }
+    bool HasRegisterResponse() const { return m_hasRegisterResponse; }
+    bool IsRegisterSuccess() const { return m_registerSuccess; }
+    const std::string& GetRegisterMessage() const { return m_registerStatus; }
+    void ClearRegisterResponse() { m_hasRegisterResponse = false; m_registerStatus.clear(); m_registerSuccess = false; }
 
     // Reset helper
     void ResetConnectionState();
@@ -72,6 +80,10 @@ private:
     std::vector<ClientChatMessage> m_messages;
     std::vector<OnlineUser> m_onlineUsers;
     VoiceSignalCallback m_voiceSignalCallback;
+    std::vector<std::string> m_pendingUsers;
+    bool m_hasRegisterResponse = false;
+    bool m_registerSuccess = false;
+    std::string m_registerStatus;
 };
 
 #endif // CLIENT_CHAT_H

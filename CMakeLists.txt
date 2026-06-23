@@ -141,6 +141,7 @@ endif()
 # We can use deps/libdatachannel if it exists, on any platform!
 if(EXISTS "${CMAKE_SOURCE_DIR}/deps/libdatachannel/CMakeLists.txt")
     set(LIBDATACHANNEL_LOCAL_DIR "${CMAKE_SOURCE_DIR}/deps/libdatachannel")
+    set(BUILD_SHARED_LIBS OFF CACHE BOOL "" FORCE)
     set(USE_OPENSSL ON  CACHE BOOL "" FORCE)
     set(USE_GNUTLS  OFF CACHE BOOL "" FORCE)
     set(USE_MBEDTLS OFF CACHE BOOL "" FORCE)
@@ -186,6 +187,9 @@ set(CLIENT_SRC
     src/client/Chat.cpp
     src/client/Voice.cpp
 )
+if(WIN32)
+    set(CLIENT_SRC ${CLIENT_SRC} src/client/resources.rc)
+endif()
 
 set(SERVER_SRC
     src/server/main.cpp
@@ -218,11 +222,11 @@ if(Vulkan_FOUND)
     else()
         if(TARGET glfw)
             target_link_libraries(client PRIVATE
-                Vulkan::Vulkan imgui glfw enet_lib sqlite3_lib
+                Vulkan::Vulkan imgui glfw enet_lib sqlite3_lib datachannel_lib
                 nlohmann_json::nlohmann_json)
         else()
             target_link_libraries(client PRIVATE
-                Vulkan::Vulkan imgui enet_lib sqlite3_lib
+                Vulkan::Vulkan imgui enet_lib sqlite3_lib datachannel_lib
                 nlohmann_json::nlohmann_json)
         endif()
     endif()

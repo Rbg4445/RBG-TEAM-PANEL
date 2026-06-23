@@ -124,6 +124,12 @@ void ServerChat::HandlePacket(ENetPeer* peer, const std::string& data) {
 
         if (type == "login") {
             HandleLogin(peer, payload);
+        } else if (type == "register") {
+            HandleRegister(peer, payload);
+        } else if (type == "approve_user") {
+            HandleApproveUser(peer, payload);
+        } else if (type == "reject_user") {
+            HandleRejectUser(peer, payload);
         } else if (type == "chat_msg") {
             HandleChatMessage(peer, payload);
         } else if (type == "kick") {
@@ -141,7 +147,18 @@ void ServerChat::HandleLogin(ENetPeer* peer, const nlohmann::json& data) {
     std::string passwordHash = data["password_hash"];
 
     std::string role;
-    if (ServerAuth::Login(username, passwordHash, role)) {
+    int approved = 0;
+    if (ServerAuth::Login(username, passwordHash, role, approved)) {
+        if (approved == 0) {
+            std::cout << "[ENet] Login denied (unapproved) for user: " << username << std::endl;
+            nlohmann::json response = {
+                {"success", false},
+                {"message", "Hesabınız henüz onaylanmadı. Lütfen admin onayını bekleyin."}
+            };
+            SendPacket(peer, "login_response", response);
+            return;
+        }
+
         std::cout << "[ENet] Login success for user: " << username << " (" << role << ")" << std::endl;
         
         m_sessions[peer].authenticated = true;
@@ -155,6 +172,11 @@ void ServerChat::HandleLogin(ENetPeer* peer, const nlohmann::json& data) {
             {"role", role}
         };
         SendPacket(peer, "login_response", response);
+
+        // If the user is admin/mod, send pending users list
+        if (role == "RBG" || role == "Owner" || role == "Admin" || role == "Mod") {
+            SendPendingUsersListToAdmins();
+        }
 
         // Send history of last 50 messages
         std::vector<ChatMessage> history = DB::GetInstance().GetLastMessages("global", 50);
@@ -317,4 +339,85 @@ void ServerChat::HandleVoiceSignal(ENetPeer* peer, const nlohmann::json& data) {
     nlohmann::json forward = data;
     forward["sender"] = senderUsername;
     SendPacket(targetPeer, "voice_signal", forward);
+}
+
+void ServerChat::HandleRegister(ENetPeer* peer, const nlohmann::json& payload) {
+    std::string username = payload["username"];
+    std::string passwordHash = payload["password_hash"];
+
+    if (username.empty() || passwordHash.empty()) {
+        nlohmann::json response = {
+            {"success", false},
+            {"message", "Kullanıcı adı veya şifre boş olamaz."}
+        };
+        SendPacket(peer, "register_response", response);
+        return;
+    }
+
+    if (DB::GetInstance().UserExists(username)) {
+        nlohmann::json response = {
+            {"success", false},
+            {"message", "Bu kullanıcı adı zaten alınmış."}
+        };
+        SendPacket(peer, "register_response", response);
+        return;
+    }
+
+    // Create user with default role "User" and approved = 0
+    if (DB::GetInstance().CreateUser(username, passwordHash, "User", 0)) {
+        std::cout << "[ENet] New user registered: " << username << " (pending approval)" << std::endl;
+        nlohmann::json response = {
+            {"success", true},
+            {"message", "Kayıt başarılı! Admin onayından sonra giriş yapabilirsiniz."}
+        };
+        SendPacket(peer, "register_response", response);
+
+        // Broadcast updated pending users list to all online admins/mods
+        SendPendingUsersListToAdmins();
+    } else {
+        nlohmann::json response = {
+            {"success", false},
+            {"message", "Kullanıcı oluşturulurken veritabanı hatası oluştu."}
+        };
+        SendPacket(peer, "register_response", response);
+    }
+}
+
+void ServerChat::HandleApproveUser(ENetPeer* peer, const nlohmann::json& payload) {
+    auto it = m_sessions.find(peer);
+    if (it == m_sessions.end() || !it->second.authenticated) return;
+
+    std::string senderRole = it->second.role;
+    if (senderRole != "RBG" && senderRole != "Owner" && senderRole != "Admin" && senderRole != "Mod") return;
+
+    std::string targetUser = payload["username"];
+    if (DB::GetInstance().ApproveUser(targetUser)) {
+        std::cout << "[ENet] User '" << targetUser << "' approved by admin '" << it->second.username << "'" << std::endl;
+        SendPendingUsersListToAdmins();
+    }
+}
+
+void ServerChat::HandleRejectUser(ENetPeer* peer, const nlohmann::json& payload) {
+    auto it = m_sessions.find(peer);
+    if (it == m_sessions.end() || !it->second.authenticated) return;
+
+    std::string senderRole = it->second.role;
+    if (senderRole != "RBG" && senderRole != "Owner" && senderRole != "Admin" && senderRole != "Mod") return;
+
+    std::string targetUser = payload["username"];
+    if (DB::GetInstance().DeleteUser(targetUser)) {
+        std::cout << "[ENet] User '" << targetUser << "' rejected (deleted) by admin '" << it->second.username << "'" << std::endl;
+        SendPendingUsersListToAdmins();
+    }
+}
+
+void ServerChat::SendPendingUsersListToAdmins() {
+    std::vector<std::string> pendingUsers = DB::GetInstance().GetPendingUsers();
+    nlohmann::json payload = pendingUsers;
+
+    for (auto const& [peer, session] : m_sessions) {
+        if (session.authenticated && (session.role == "RBG" || session.role == "Owner" || session.role == "Admin" || session.role == "Mod")) {
+            SendPacket(peer, "pending_users_list", payload);
+        }
+    }
 }

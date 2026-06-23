@@ -13,7 +13,7 @@ bool ClientChat::Init() {
         std::cerr << "[ENet] An error occurred while initializing ENet." << std::endl;
         return false;
     }
-    m_client = enet_host_create(nullptr, 1, 2, 0, 0);
+    m_client = enet_host_create(nullptr, 10, 2, 0, 0);
     if (m_client == nullptr) {
         std::cerr << "[ENet] An error occurred while trying to create an ENet client host." << std::endl;
         enet_deinitialize();
@@ -105,6 +105,10 @@ void ClientChat::ResetConnectionState() {
     m_loginError.clear();
     m_messages.clear();
     m_onlineUsers.clear();
+    m_pendingUsers.clear();
+    m_hasRegisterResponse = false;
+    m_registerSuccess = false;
+    m_registerStatus.clear();
 }
 
 void ClientChat::SendPacket(const std::string& type, const nlohmann::json& payload) {
@@ -146,6 +150,29 @@ void ClientChat::SendKick(const std::string& username) {
 
 void ClientChat::SendVoiceSignal(const nlohmann::json& data) {
     SendPacket("voice_signal", data);
+}
+
+void ClientChat::SendRegister(const std::string& username, const std::string& password) {
+    std::string hash = Utils::Sha256(password);
+    nlohmann::json payload = {
+        {"username", username},
+        {"password_hash", hash}
+    };
+    SendPacket("register", payload);
+}
+
+void ClientChat::SendApproveUser(const std::string& username) {
+    nlohmann::json payload = {
+        {"username", username}
+    };
+    SendPacket("approve_user", payload);
+}
+
+void ClientChat::SendRejectUser(const std::string& username) {
+    nlohmann::json payload = {
+        {"username", username}
+    };
+    SendPacket("reject_user", payload);
 }
 
 void ClientChat::HandlePacket(const std::string& data) {
@@ -200,6 +227,16 @@ void ClientChat::HandlePacket(const std::string& data) {
         } else if (type == "voice_signal") {
             if (m_voiceSignalCallback) {
                 m_voiceSignalCallback(payload);
+            }
+        } else if (type == "register_response") {
+            bool success = payload["success"];
+            m_registerSuccess = success;
+            m_registerStatus = payload["message"];
+            m_hasRegisterResponse = true;
+        } else if (type == "pending_users_list") {
+            m_pendingUsers.clear();
+            for (const auto& item : payload) {
+                m_pendingUsers.push_back(item.get<std::string>());
             }
         }
     } catch (const std::exception& e) {

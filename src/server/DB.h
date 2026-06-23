@@ -21,10 +21,13 @@ public:
     void Close();
 
     // User operations
-    bool CreateUser(const std::string& username, const std::string& passwordHash, const std::string& role);
-    bool VerifyUser(const std::string& username, const std::string& passwordHash, std::string& outRole);
+    bool CreateUser(const std::string& username, const std::string& passwordHash, const std::string& role, int approved = 0);
+    bool VerifyUser(const std::string& username, const std::string& passwordHash, std::string& outRole, int& outApproved);
     bool UserExists(const std::string& username);
     bool GetMessageById(int64_t id, ChatMessage& outMsg);
+    std::vector<std::string> GetPendingUsers();
+    bool ApproveUser(const std::string& username);
+    bool DeleteUser(const std::string& username);
 
     // Message operations
     bool SaveMessage(const std::string& room, const std::string& sender, const std::string& content, int64_t timestamp, int64_t reply_to_id = 0, int64_t* out_id = nullptr);

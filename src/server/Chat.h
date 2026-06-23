@@ -31,9 +31,13 @@ private:
 
     void HandlePacket(ENetPeer* peer, const std::string& data);
     void HandleLogin(ENetPeer* peer, const nlohmann::json& data);
+    void HandleRegister(ENetPeer* peer, const nlohmann::json& data);
+    void HandleApproveUser(ENetPeer* peer, const nlohmann::json& data);
+    void HandleRejectUser(ENetPeer* peer, const nlohmann::json& data);
     void HandleChatMessage(ENetPeer* peer, const nlohmann::json& data);
     void HandleKick(ENetPeer* peer, const nlohmann::json& data);
     void HandleVoiceSignal(ENetPeer* peer, const nlohmann::json& data);
+    void SendPendingUsersListToAdmins();
 
     ENetHost* m_server = nullptr;
     std::map<ENetPeer*, ClientSession> m_sessions;

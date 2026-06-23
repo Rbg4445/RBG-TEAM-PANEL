@@ -58,31 +58,37 @@ bool DB::Init(const std::string& dbPath) {
     // Alter table to add reply_to_id if it doesn't exist
     sqlite3_exec(SQLITE_DB, "ALTER TABLE messages ADD COLUMN reply_to_id INTEGER DEFAULT 0;", nullptr, nullptr, nullptr);
 
+    // Alter table to add approved if it doesn't exist
+    sqlite3_exec(SQLITE_DB, "ALTER TABLE users ADD COLUMN approved INTEGER DEFAULT 0;", nullptr, nullptr, nullptr);
+
+    // Update existing default accounts to be approved
+    sqlite3_exec(SQLITE_DB, "UPDATE users SET approved = 1 WHERE username IN ('admin', 'owner', 'admin_user', 'mod', 'user');", nullptr, nullptr, nullptr);
+
     // Seed default accounts if they don't exist
     if (!UserExists("admin")) {
         std::string defaultHash = Utils::Sha256("admin123");
         std::cout << "[DB] Seeding default admin user (username: 'admin', role: 'RBG')" << std::endl;
-        CreateUser("admin", defaultHash, "RBG");
+        CreateUser("admin", defaultHash, "RBG", 1);
     }
     if (!UserExists("owner")) {
         std::string defaultHash = Utils::Sha256("owner123");
         std::cout << "[DB] Seeding default owner user (username: 'owner', role: 'Owner')" << std::endl;
-        CreateUser("owner", defaultHash, "Owner");
+        CreateUser("owner", defaultHash, "Owner", 1);
     }
     if (!UserExists("admin_user")) {
         std::string defaultHash = Utils::Sha256("admin123");
         std::cout << "[DB] Seeding default admin_user user (username: 'admin_user', role: 'Admin')" << std::endl;
-        CreateUser("admin_user", defaultHash, "Admin");
+        CreateUser("admin_user", defaultHash, "Admin", 1);
     }
     if (!UserExists("mod")) {
         std::string defaultHash = Utils::Sha256("mod123");
         std::cout << "[DB] Seeding default mod user (username: 'mod', role: 'Mod')" << std::endl;
-        CreateUser("mod", defaultHash, "Mod");
+        CreateUser("mod", defaultHash, "Mod", 1);
     }
     if (!UserExists("user")) {
         std::string defaultHash = Utils::Sha256("user123");
         std::cout << "[DB] Seeding default user (username: 'user', role: 'User')" << std::endl;
-        CreateUser("user", defaultHash, "User");
+        CreateUser("user", defaultHash, "User", 1);
     }
 
     return true;
@@ -95,8 +101,8 @@ void DB::Close() {
     }
 }
 
-bool DB::CreateUser(const std::string& username, const std::string& passwordHash, const std::string& role) {
-    const char* sql = "INSERT INTO users (username, password_hash, role) VALUES (?, ?, ?);";
+bool DB::CreateUser(const std::string& username, const std::string& passwordHash, const std::string& role, int approved) {
+    const char* sql = "INSERT INTO users (username, password_hash, role, approved) VALUES (?, ?, ?, ?);";
     sqlite3_stmt* stmt = nullptr;
 
     int rc = sqlite3_prepare_v2(SQLITE_DB, sql, -1, &stmt, nullptr);
@@ -108,6 +114,7 @@ bool DB::CreateUser(const std::string& username, const std::string& passwordHash
     sqlite3_bind_text(stmt, 1, username.c_str(), -1, SQLITE_TRANSIENT);
     sqlite3_bind_text(stmt, 2, passwordHash.c_str(), -1, SQLITE_TRANSIENT);
     sqlite3_bind_text(stmt, 3, role.c_str(), -1, SQLITE_TRANSIENT);
+    sqlite3_bind_int(stmt, 4, approved);
 
     rc = sqlite3_step(stmt);
     sqlite3_finalize(stmt);
@@ -120,8 +127,8 @@ bool DB::CreateUser(const std::string& username, const std::string& passwordHash
     return true;
 }
 
-bool DB::VerifyUser(const std::string& username, const std::string& passwordHash, std::string& outRole) {
-    const char* sql = "SELECT role FROM users WHERE username = ? AND password_hash = ?;";
+bool DB::VerifyUser(const std::string& username, const std::string& passwordHash, std::string& outRole, int& outApproved) {
+    const char* sql = "SELECT role, approved FROM users WHERE username = ? AND password_hash = ?;";
     sqlite3_stmt* stmt = nullptr;
 
     int rc = sqlite3_prepare_v2(SQLITE_DB, sql, -1, &stmt, nullptr);
@@ -139,6 +146,7 @@ bool DB::VerifyUser(const std::string& username, const std::string& passwordHash
         const unsigned char* roleText = sqlite3_column_text(stmt, 0);
         if (roleText) {
             outRole = (const char*)roleText;
+            outApproved = sqlite3_column_int(stmt, 1);
             success = true;
         }
     }
@@ -258,4 +266,43 @@ std::vector<ChatMessage> DB::GetLastMessages(const std::string& room, int limit)
     // Reverse messages to display in chronological order
     std::reverse(messages.begin(), messages.end());
     return messages;
+}
+
+std::vector<std::string> DB::GetPendingUsers() {
+    std::vector<std::string> users;
+    const char* sql = "SELECT username FROM users WHERE approved = 0 ORDER BY username ASC;";
+    sqlite3_stmt* stmt = nullptr;
+    int rc = sqlite3_prepare_v2(SQLITE_DB, sql, -1, &stmt, nullptr);
+    if (rc == SQLITE_OK) {
+        while (sqlite3_step(stmt) == SQLITE_ROW) {
+            const unsigned char* usernameText = sqlite3_column_text(stmt, 0);
+            if (usernameText) {
+                users.push_back((const char*)usernameText);
+            }
+        }
+    }
+    sqlite3_finalize(stmt);
+    return users;
+}
+
+bool DB::ApproveUser(const std::string& username) {
+    const char* sql = "UPDATE users SET approved = 1 WHERE username = ?;";
+    sqlite3_stmt* stmt = nullptr;
+    int rc = sqlite3_prepare_v2(SQLITE_DB, sql, -1, &stmt, nullptr);
+    if (rc != SQLITE_OK) return false;
+    sqlite3_bind_text(stmt, 1, username.c_str(), -1, SQLITE_TRANSIENT);
+    rc = sqlite3_step(stmt);
+    sqlite3_finalize(stmt);
+    return (rc == SQLITE_DONE);
+}
+
+bool DB::DeleteUser(const std::string& username) {
+    const char* sql = "DELETE FROM users WHERE username = ?;";
+    sqlite3_stmt* stmt = nullptr;
+    int rc = sqlite3_prepare_v2(SQLITE_DB, sql, -1, &stmt, nullptr);
+    if (rc != SQLITE_OK) return false;
+    sqlite3_bind_text(stmt, 1, username.c_str(), -1, SQLITE_TRANSIENT);
+    rc = sqlite3_step(stmt);
+    sqlite3_finalize(stmt);
+    return (rc == SQLITE_DONE);
 }

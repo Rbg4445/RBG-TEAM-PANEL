@@ -46,14 +46,27 @@ struct AudioBuffer {
             available = capacity - read_pos + write_pos;
         }
 
+        // Latency control: if buffer has accumulated more than 150ms of audio (3600 samples at 24kHz),
+        // skip the older data to catch up to real-time (target latency of ~60ms / 1440 samples).
+        if (available > 3600) {
+            size_t skip = available - 1440;
+            read_pos = (read_pos + skip) % capacity;
+            available = 1440;
+        }
+
         if (available < count) {
             size_t i = 0;
+            int16_t last_sample = 0;
             for (; i < available; ++i) {
                 data[i] = buffer[read_pos];
+                last_sample = data[i];
                 read_pos = (read_pos + 1) % capacity;
             }
+            // Packet loss concealment: decay last sample towards zero instead of sudden silence
+            float val = last_sample;
             for (; i < count; ++i) {
-                data[i] = 0;
+                val *= 0.95f;
+                data[i] = static_cast<int16_t>(val);
             }
         } else {
             for (size_t i = 0; i < count; ++i) {

@@ -1,0 +1,155 @@
+Performing C SOURCE FILE Test have_sa_len failed with the following output:
+Change Dir: /workspace/build_linux/CMakeFiles/CMakeScratch/TryCompile-RC18bu
+
+Run Build Command(s):/usr/bin/ninja cmTC_ec158 && [1/2] Building C object CMakeFiles/cmTC_ec158.dir/src.c.o
+FAILED: CMakeFiles/cmTC_ec158.dir/src.c.o 
+/usr/bin/cc -Dhave_sa_len -I/workspace/deps/libdatachannel/deps/usrsctp/usrsctplib -fPIE -o CMakeFiles/cmTC_ec158.dir/src.c.o -c /workspace/build_linux/CMakeFiles/CMakeScratch/TryCompile-RC18bu/src.c
+/workspace/build_linux/CMakeFiles/CMakeScratch/TryCompile-RC18bu/src.c: In function 'main':
+/workspace/build_linux/CMakeFiles/CMakeScratch/TryCompile-RC18bu/src.c:7:38: error: 'struct sockaddr' has no member named 'sa_len'
+    7 |   (void)sizeof(((struct sockaddr *)0)->sa_len);
+      |                                      ^~
+ninja: build stopped: subcommand failed.
+
+
+Source file was:
+
+#include <sys/types.h>
+#include <sys/socket.h>
+
+int main()
+{
+  (void)sizeof(((struct sockaddr *)0)->sa_len);
+  return 0;
+}
+
+
+Performing C SOURCE FILE Test have_sin_len failed with the following output:
+Change Dir: /workspace/build_linux/CMakeFiles/CMakeScratch/TryCompile-TugB7b
+
+Run Build Command(s):/usr/bin/ninja cmTC_132ae && [1/2] Building C object CMakeFiles/cmTC_132ae.dir/src.c.o
+FAILED: CMakeFiles/cmTC_132ae.dir/src.c.o 
+/usr/bin/cc -Dhave_sin_len -I/workspace/deps/libdatachannel/deps/usrsctp/usrsctplib -fPIE -o CMakeFiles/cmTC_132ae.dir/src.c.o -c /workspace/build_linux/CMakeFiles/CMakeScratch/TryCompile-TugB7b/src.c
+/workspace/build_linux/CMakeFiles/CMakeScratch/TryCompile-TugB7b/src.c: In function 'main':
+/workspace/build_linux/CMakeFiles/CMakeScratch/TryCompile-TugB7b/src.c:7:41: error: 'struct sockaddr_in' has no member named 'sin_len'
+    7 |   (void)sizeof(((struct sockaddr_in *)0)->sin_len);
+      |                                         ^~
+ninja: build stopped: subcommand failed.
+
+
+Source file was:
+
+#include <sys/types.h>
+#include <netinet/in.h>
+
+int main()
+{
+  (void)sizeof(((struct sockaddr_in *)0)->sin_len);
+  return 0;
+}
+
+
+Performing C SOURCE FILE Test have_sin6_len failed with the following output:
+Change Dir: /workspace/build_linux/CMakeFiles/CMakeScratch/TryCompile-6kMyRN
+
+Run Build Command(s):/usr/bin/ninja cmTC_d11ba && [1/2] Building C object CMakeFiles/cmTC_d11ba.dir/src.c.o
+FAILED: CMakeFiles/cmTC_d11ba.dir/src.c.o 
+/usr/bin/cc -Dhave_sin6_len -I/workspace/deps/libdatachannel/deps/usrsctp/usrsctplib -fPIE -o CMakeFiles/cmTC_d11ba.dir/src.c.o -c /workspace/build_linux/CMakeFiles/CMakeScratch/TryCompile-6kMyRN/src.c
+/workspace/build_linux/CMakeFiles/CMakeScratch/TryCompile-6kMyRN/src.c: In function 'main':
+/workspace/build_linux/CMakeFiles/CMakeScratch/TryCompile-6kMyRN/src.c:7:42: error: 'struct sockaddr_in6' has no member named 'sin6_len'
+    7 |   (void)sizeof(((struct sockaddr_in6 *)0)->sin6_len);
+      |                                          ^~
+ninja: build stopped: subcommand failed.
+
+
+Source file was:
+
+#include <sys/types.h>
+#include <netinet/in.h>
+
+int main()
+{
+  (void)sizeof(((struct sockaddr_in6 *)0)->sin6_len);
+  return 0;
+}
+
+
+Performing C SOURCE FILE Test have_sconn_len failed with the following output:
+Change Dir: /workspace/build_linux/CMakeFiles/CMakeScratch/TryCompile-B91UK9
+
+Run Build Command(s):/usr/bin/ninja cmTC_6c9f2 && [1/2] Building C object CMakeFiles/cmTC_6c9f2.dir/src.c.o
+FAILED: CMakeFiles/cmTC_6c9f2.dir/src.c.o 
+/usr/bin/cc -Dhave_sconn_len -I/workspace/deps/libdatachannel/deps/usrsctp/usrsctplib -fPIE -o CMakeFiles/cmTC_6c9f2.dir/src.c.o -c /workspace/build_linux/CMakeFiles/CMakeScratch/TryCompile-B91UK9/src.c
+/workspace/build_linux/CMakeFiles/CMakeScratch/TryCompile-B91UK9/src.c: In function 'main':
+/workspace/build_linux/CMakeFiles/CMakeScratch/TryCompile-B91UK9/src.c:6:43: error: 'struct sockaddr_conn' has no member named 'sconn_len'
+    6 |   (void)sizeof(((struct sockaddr_conn *)0)->sconn_len);
+      |                                           ^~
+ninja: build stopped: subcommand failed.
+
+
+Source file was:
+
+#include <usrsctp.h>
+
+int main()
+{
+  (void)sizeof(((struct sockaddr_conn *)0)->sconn_len);
+  return 0;
+}
+
+
+Determining if the include file machine/types.h exists failed with the following output:
+Change Dir: /workspace/build_linux/CMakeFiles/CMakeScratch/TryCompile-CTW5u1
+
+Run Build Command(s):/usr/bin/ninja cmTC_5230e && [1/2] Building C object CMakeFiles/cmTC_5230e.dir/CheckIncludeFile.c.o
+FAILED: CMakeFiles/cmTC_5230e.dir/CheckIncludeFile.c.o 
+/usr/bin/cc   -fPIE -std=gnu99 -o CMakeFiles/cmTC_5230e.dir/CheckIncludeFile.c.o -c /workspace/build_linux/CMakeFiles/CMakeScratch/TryCompile-CTW5u1/CheckIncludeFile.c
+/workspace/build_linux/CMakeFiles/CMakeScratch/TryCompile-CTW5u1/CheckIncludeFile.c:1:10: fatal error: machine/types.h: No such file or directory
+    1 | #include <machine/types.h>
+      |          ^~~~~~~~~~~~~~~~~
+compilation terminated.
+ninja: build stopped: subcommand failed.
+
+
+
+Determining if the include file sys/int_types.h exists failed with the following output:
+Change Dir: /workspace/build_linux/CMakeFiles/CMakeScratch/TryCompile-P1oC2E
+
+Run Build Command(s):/usr/bin/ninja cmTC_c9eb3 && [1/2] Building C object CMakeFiles/cmTC_c9eb3.dir/CheckIncludeFile.c.o
+FAILED: CMakeFiles/cmTC_c9eb3.dir/CheckIncludeFile.c.o 
+/usr/bin/cc   -fPIE -std=gnu99 -o CMakeFiles/cmTC_c9eb3.dir/CheckIncludeFile.c.o -c /workspace/build_linux/CMakeFiles/CMakeScratch/TryCompile-P1oC2E/CheckIncludeFile.c
+/workspace/build_linux/CMakeFiles/CMakeScratch/TryCompile-P1oC2E/CheckIncludeFile.c:1:10: fatal error: sys/int_types.h: No such file or directory
+    1 | #include <sys/int_types.h>
+      |          ^~~~~~~~~~~~~~~~~
+compilation terminated.
+ninja: build stopped: subcommand failed.
+
+
+
+Determining if the include file windows.h exists failed with the following output:
+Change Dir: /workspace/build_linux/CMakeFiles/CMakeScratch/TryCompile-X1btBA
+
+Run Build Command(s):/usr/bin/ninja cmTC_b22b2 && [1/2] Building C object CMakeFiles/cmTC_b22b2.dir/CheckIncludeFile.c.o
+FAILED: CMakeFiles/cmTC_b22b2.dir/CheckIncludeFile.c.o 
+/usr/bin/cc   -fPIE -std=gnu99 -o CMakeFiles/cmTC_b22b2.dir/CheckIncludeFile.c.o -c /workspace/build_linux/CMakeFiles/CMakeScratch/TryCompile-X1btBA/CheckIncludeFile.c
+/workspace/build_linux/CMakeFiles/CMakeScratch/TryCompile-X1btBA/CheckIncludeFile.c:1:10: fatal error: windows.h: No such file or directory
+    1 | #include <windows.h>
+      |          ^~~~~~~~~~~
+compilation terminated.
+ninja: build stopped: subcommand failed.
+
+
+
+Determining if the include file winsock2.h exists failed with the following output:
+Change Dir: /workspace/build_linux/CMakeFiles/CMakeScratch/TryCompile-qNkvno
+
+Run Build Command(s):/usr/bin/ninja cmTC_88b9d && [1/2] Building C object CMakeFiles/cmTC_88b9d.dir/CheckIncludeFile.c.o
+FAILED: CMakeFiles/cmTC_88b9d.dir/CheckIncludeFile.c.o 
+/usr/bin/cc   -fPIE -std=gnu99 -o CMakeFiles/cmTC_88b9d.dir/CheckIncludeFile.c.o -c /workspace/build_linux/CMakeFiles/CMakeScratch/TryCompile-qNkvno/CheckIncludeFile.c
+/workspace/build_linux/CMakeFiles/CMakeScratch/TryCompile-qNkvno/CheckIncludeFile.c:1:10: fatal error: winsock2.h: No such file or directory
+    1 | #include <winsock2.h>
+      |          ^~~~~~~~~~~~
+compilation terminated.
+ninja: build stopped: subcommand failed.
+
+
+

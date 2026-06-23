@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=Management Client
+Comment=RBG Team Management Client Panel
+Exec=/usr/bin/management-client
+Icon=management-client
+Terminal=false
+Categories=Utility;
