@@ -1,0 +1,8 @@
+.vs/
+out/
+build_temp/
+CMakeSettings.json
+*.user
+x64/
+*.zip
+dist_client/

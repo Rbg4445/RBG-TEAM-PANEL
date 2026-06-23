@@ -1,0 +1,23 @@
+# fly.toml configuration for Management Panel Server
+
+app = "rbg-management-server"
+primary_region = "fra" # Frankfurt (close to Turkey)
+
+[build]
+  dockerfile = "Dockerfile"
+
+[[services]]
+  internal_port = 7777
+  protocol = "udp"
+  processes = ["app"]
+
+  [[services.ports]]
+    port = 7777
+
+[[services]]
+  internal_port = 8080
+  protocol = "tcp"
+  processes = ["app"]
+
+  [[services.ports]]
+    port = 8080

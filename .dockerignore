@@ -1,0 +1,33 @@
+# Git history
+.git
+**/.git
+
+# Build outputs (Windows)
+out/
+build/
+*.user
+*.suo
+.vs/
+
+# CMake cache files
+CMakeCache.txt
+CMakeFiles/
+
+# Visual Studio project files (not needed in Docker)
+*.vcxproj
+*.vcxproj.filters
+*.sln
+
+# Logs
+*.log
+*.tmp
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Docker ignore itself
+Dockerfile*
+.dockerignore
+
+# NOTE: deps/libdatachannel IS needed for Docker build — do NOT exclude it
