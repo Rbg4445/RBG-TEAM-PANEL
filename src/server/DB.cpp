@@ -2,6 +2,7 @@
 #include "Utils.h"
 #include <sqlite3.h>
 #include <iostream>
+#include <algorithm>
 
 // Helper macro to cast m_db to sqlite3*
 #define SQLITE_DB ((sqlite3*)m_db)
