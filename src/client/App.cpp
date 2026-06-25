@@ -867,18 +867,27 @@ void RenderDashboard(const ImGuiIO& io, char* messageBuffer, char* serverIp, flo
     // ---- MAIN CONTENT AREA (Left Panel, drawn first!) ----
     ImGui::BeginChild("##MainContent", ImVec2(mainContentW, contentH), true, ImGuiWindowFlags_NoScrollbar);
 
+    // Spacing from top border of Main Content
+    ImGui::Dummy(ImVec2(0, 10.f));
+
     // Profile Section inside Main Content Area (Top-Left)
     {
-        ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(4.f, 4.f));
+        ImGui::Dummy(ImVec2(10.f, 0)); ImGui::SameLine();
         ImGui::BeginGroup();
             ImVec2 cp = ImGui::GetCursorScreenPos();
-            float r = 16.f;
-            ImVec2 center(cp.x + r + 4, cp.y + r + 4);
+            float r = 20.f; // 40px avatar for premium look
+            ImVec2 center(cp.x + r, cp.y + r);
             DrawAvatar(center, r, username, role);
-            ImGui::Dummy(ImVec2(2 * r + 12, 2 * r + 8));
+            
+            // Advance cursor past the avatar (we reserve a square + some margin)
+            ImGui::Dummy(ImVec2(2 * r + 12.f, 2 * r));
             ImGui::SameLine();
+            
+            // Username & Role Group
             ImGui::BeginGroup();
+                ImGui::Dummy(ImVec2(0, 2.f)); // Align text vertically with avatar center
                 ImGui::TextColored(ImVec4(1.f, 1.f, 1.f, 1.f), "%s", username.c_str());
+                
                 ImVec4 roleCol = ImVec4(0.7f, 0.7f, 0.7f, 1.f);
                 if      (role == "RBG")   roleCol = ImVec4(1.0f, 0.6f, 0.0f, 1.f);
                 else if (role == "Owner") roleCol = ImVec4(0.8f, 0.2f, 0.8f, 1.f);
@@ -887,18 +896,19 @@ void RenderDashboard(const ImGuiIO& io, char* messageBuffer, char* serverIp, flo
                 ImGui::TextColored(roleCol, "[%s]", role.c_str());
             ImGui::EndGroup();
         ImGui::EndGroup();
-        ImGui::PopStyleVar();
     }
-    ImGui::Dummy(ImVec2(0, 4));
+    ImGui::Dummy(ImVec2(0, 8.f));
     ImGui::Separator();
-    ImGui::Dummy(ImVec2(0, 4));
+    ImGui::Dummy(ImVec2(0, 8.f));
+
+    ImGui::Indent(12.f); // Indent the active tab content
 
     // ============================================================
     //  TAB 1: CHAT ROOM
     // ============================================================
     if (g_ActiveTab == ActiveTab::CHAT) {
         float rightPanelW = g_ShowUserList ? 200.f : 0.f;
-        float chatWidth = ImGui::GetContentRegionAvail().x - rightPanelW - (g_ShowUserList ? 8.f : 0.f);
+        float chatWidth = ImGui::GetContentRegionAvail().x - rightPanelW - (g_ShowUserList ? 8.f : 0.f) - 12.f;
 
         // Chat Container
         ImGui::BeginChild("##ChatContainer", ImVec2(chatWidth, 0), true, ImGuiWindowFlags_NoScrollbar);
@@ -1144,7 +1154,7 @@ void RenderDashboard(const ImGuiIO& io, char* messageBuffer, char* serverIp, flo
     // ============================================================
     else if (g_ActiveTab == ActiveTab::DMS) {
         float leftWidth = 240.f;
-        float rightWidth = ImGui::GetContentRegionAvail().x - leftWidth - 8.f;
+        float rightWidth = ImGui::GetContentRegionAvail().x - leftWidth - 8.f - 12.f;
 
         // Sol panel: Direct message contacts list
         ImGui::BeginChild("##DMSContacts", ImVec2(leftWidth, 0), true);
@@ -1370,7 +1380,7 @@ void RenderDashboard(const ImGuiIO& io, char* messageBuffer, char* serverIp, flo
         bool selfDeafened = voice.IsDeafened();
         auto participants = voice.GetParticipants();
         auto status = voice.GetStatus();
-        float panelW = ImGui::GetContentRegionAvail().x - 280.f;
+        float panelW = ImGui::GetContentRegionAvail().x - 280.f - 12.f;
 
         // ---- Left panel: Room view ----
         ImGui::BeginChild("##VoiceRoomPanel", ImVec2(panelW, 0), true, ImGuiWindowFlags_NoScrollbar);
@@ -1637,7 +1647,7 @@ void RenderDashboard(const ImGuiIO& io, char* messageBuffer, char* serverIp, flo
     //  TAB 3: MODERATION PANEL (Mod+)
     // ============================================================
     else if (g_ActiveTab == ActiveTab::MODERATION && isMod) {
-        ImGui::BeginChild("##ModerationPanel", ImVec2(0, 0), true, ImGuiWindowFlags_NoScrollbar);
+        ImGui::BeginChild("##ModerationPanel", ImVec2(-12.f, 0), true, ImGuiWindowFlags_NoScrollbar);
         ImGui::TextColored(ImVec4(1.f, 0.3f, 0.3f, 1.f), "Yetkili Yonetim Paneli");
         ImGui::Separator();
         ImGui::Dummy(ImVec2(0, 8));
@@ -1755,7 +1765,7 @@ void RenderDashboard(const ImGuiIO& io, char* messageBuffer, char* serverIp, flo
     //  TAB 4: SETTINGS & VISUAL PREFERENCES
     // ============================================================
     else if (g_ActiveTab == ActiveTab::SETTINGS) {
-        ImGui::BeginChild("##SettingsPanel", ImVec2(0, 0), true, ImGuiWindowFlags_NoScrollbar);
+        ImGui::BeginChild("##SettingsPanel", ImVec2(-12.f, 0), true, ImGuiWindowFlags_NoScrollbar);
         ImGui::Text("Ayarlar ve Bilgiler");
         ImGui::Separator();
         ImGui::Dummy(ImVec2(0, 10));
@@ -1886,6 +1896,7 @@ void RenderDashboard(const ImGuiIO& io, char* messageBuffer, char* serverIp, flo
         ImGui::EndChild();
     }
 
+    ImGui::Unindent(12.f);
     ImGui::EndChild(); // End MainContent
 
     ImGui::SameLine();
