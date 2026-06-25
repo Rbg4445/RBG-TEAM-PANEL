@@ -61,6 +61,9 @@ bool DB::Init(const std::string& dbPath) {
     // Alter table to add approved if it doesn't exist
     sqlite3_exec(SQLITE_DB, "ALTER TABLE users ADD COLUMN approved INTEGER DEFAULT 0;", nullptr, nullptr, nullptr);
 
+    // Alter table to add avatar_id if it doesn't exist
+    sqlite3_exec(SQLITE_DB, "ALTER TABLE users ADD COLUMN avatar_id INTEGER DEFAULT 0;", nullptr, nullptr, nullptr);
+
     // Update existing default accounts to be approved
     sqlite3_exec(SQLITE_DB, "UPDATE users SET approved = 1 WHERE username IN ('admin', 'owner', 'admin_user', 'mod', 'user');", nullptr, nullptr, nullptr);
 
@@ -127,8 +130,8 @@ bool DB::CreateUser(const std::string& username, const std::string& passwordHash
     return true;
 }
 
-bool DB::VerifyUser(const std::string& username, const std::string& passwordHash, std::string& outRole, int& outApproved) {
-    const char* sql = "SELECT role, approved FROM users WHERE username = ? AND password_hash = ?;";
+bool DB::VerifyUser(const std::string& username, const std::string& passwordHash, std::string& outRole, int& outApproved, int& outAvatarId) {
+    const char* sql = "SELECT role, approved, avatar_id FROM users WHERE username = ? AND password_hash = ?;";
     sqlite3_stmt* stmt = nullptr;
 
     int rc = sqlite3_prepare_v2(SQLITE_DB, sql, -1, &stmt, nullptr);
@@ -147,12 +150,32 @@ bool DB::VerifyUser(const std::string& username, const std::string& passwordHash
         if (roleText) {
             outRole = (const char*)roleText;
             outApproved = sqlite3_column_int(stmt, 1);
+            outAvatarId = sqlite3_column_int(stmt, 2);
             success = true;
         }
     }
 
     sqlite3_finalize(stmt);
     return success;
+}
+
+bool DB::UpdateUserAvatar(const std::string& username, int avatarId) {
+    const char* sql = "UPDATE users SET avatar_id = ? WHERE username = ?;";
+    sqlite3_stmt* stmt = nullptr;
+
+    int rc = sqlite3_prepare_v2(SQLITE_DB, sql, -1, &stmt, nullptr);
+    if (rc != SQLITE_OK) {
+        std::cerr << "Prepare update avatar error: " << sqlite3_errmsg(SQLITE_DB) << std::endl;
+        return false;
+    }
+
+    sqlite3_bind_int(stmt, 1, avatarId);
+    sqlite3_bind_text(stmt, 2, username.c_str(), -1, SQLITE_TRANSIENT);
+
+    rc = sqlite3_step(stmt);
+    sqlite3_finalize(stmt);
+
+    return (rc == SQLITE_DONE);
 }
 
 bool DB::UserExists(const std::string& username) {

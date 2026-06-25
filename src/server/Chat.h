@@ -10,6 +10,7 @@ struct ClientSession {
     std::string username;
     std::string role;
     bool authenticated = false;
+    int avatar_id = 0;
 };
 
 class ServerChat {
@@ -37,6 +38,10 @@ private:
     void HandleChatMessage(ENetPeer* peer, const nlohmann::json& data);
     void HandleKick(ENetPeer* peer, const nlohmann::json& data);
     void HandleVoiceSignal(ENetPeer* peer, const nlohmann::json& data);
+    void HandlePrivateMessage(ENetPeer* peer, const nlohmann::json& data);
+    void HandleGetDMHistory(ENetPeer* peer, const nlohmann::json& data);
+    void HandleChangeAvatar(ENetPeer* peer, const nlohmann::json& data);
+    void HandleTypingStatus(ENetPeer* peer, const nlohmann::json& data);
     void SendPendingUsersListToAdmins();
 
     ENetHost* m_server = nullptr;

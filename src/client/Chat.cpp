@@ -109,6 +109,9 @@ void ClientChat::ResetConnectionState() {
     m_hasRegisterResponse = false;
     m_registerSuccess = false;
     m_registerStatus.clear();
+    m_privateMessages.clear();
+    m_typingUsers.clear();
+    m_myAvatarId = 0;
 }
 
 void ClientChat::SendPacket(const std::string& type, const nlohmann::json& payload) {
@@ -186,9 +189,10 @@ void ClientChat::HandlePacket(const std::string& data) {
             if (success) {
                 std::string username = payload["username"];
                 std::string role = payload["role"];
+                m_myAvatarId = payload.value("avatar_id", 0);
                 ClientAuth::GetInstance().SetSession(username, role);
                 m_loginError.clear();
-                std::cout << "[Auth] Successfully logged in as " << username << " (" << role << ")" << std::endl;
+                std::cout << "[Auth] Successfully logged in as " << username << " (" << role << ") avatar: " << m_myAvatarId << std::endl;
             } else {
                 m_loginError = payload["message"];
                 std::cerr << "[Auth] Login failed: " << m_loginError << std::endl;
@@ -222,7 +226,42 @@ void ClientChat::HandlePacket(const std::string& data) {
                 OnlineUser user;
                 user.username = item["username"];
                 user.role = item["role"];
+                user.avatar_id = item.value("avatar_id", 0);
                 m_onlineUsers.push_back(user);
+            }
+        } else if (type == "private_msg") {
+            PrivateMessage msg;
+            msg.sender = payload["sender"];
+            msg.to = payload["to"];
+            msg.content = payload["content"];
+            msg.timestamp = payload["timestamp"];
+            m_privateMessages.push_back(msg);
+        } else if (type == "dm_history") {
+            std::string withUser = payload["with_user"];
+            m_privateMessages.erase(std::remove_if(m_privateMessages.begin(), m_privateMessages.end(),
+                [&](const PrivateMessage& m) { return m.sender == withUser || m.to == withUser; }),
+                m_privateMessages.end());
+
+            for (const auto& item : payload["messages"]) {
+                PrivateMessage msg;
+                msg.sender = item["sender"];
+                msg.to = (msg.sender == withUser) ? ClientAuth::GetInstance().GetUsername() : withUser;
+                msg.content = item["content"];
+                msg.timestamp = item["timestamp"];
+                m_privateMessages.push_back(msg);
+            }
+        } else if (type == "typing_status") {
+            std::string user = payload["username"];
+            bool isTyping = payload["is_typing"];
+            auto it = std::find(m_typingUsers.begin(), m_typingUsers.end(), user);
+            if (isTyping) {
+                if (it == m_typingUsers.end()) {
+                    m_typingUsers.push_back(user);
+                }
+            } else {
+                if (it != m_typingUsers.end()) {
+                    m_typingUsers.erase(it);
+                }
             }
         } else if (type == "voice_signal") {
             if (m_voiceSignalCallback) {
@@ -242,4 +281,33 @@ void ClientChat::HandlePacket(const std::string& data) {
     } catch (const std::exception& e) {
         std::cerr << "[ENet] Error parsing client packet: " << e.what() << std::endl;
     }
+}
+
+void ClientChat::SendPrivateMessage(const std::string& toUser, const std::string& content) {
+    nlohmann::json payload = {
+        {"to", toUser},
+        {"content", content}
+    };
+    SendPacket("private_msg", payload);
+}
+
+void ClientChat::SendGetDMHistory(const std::string& withUser) {
+    nlohmann::json payload = {
+        {"with_user", withUser}
+    };
+    SendPacket("get_dm_history", payload);
+}
+
+void ClientChat::SendChangeAvatar(int avatarId) {
+    nlohmann::json payload = {
+        {"avatar_id", avatarId}
+    };
+    SendPacket("change_avatar", payload);
+}
+
+void ClientChat::SendTypingStatus(bool isTyping) {
+    nlohmann::json payload = {
+        {"is_typing", isTyping}
+    };
+    SendPacket("typing_status", payload);
 }

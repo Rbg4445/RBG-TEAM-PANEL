@@ -136,6 +136,14 @@ void ServerChat::HandlePacket(ENetPeer* peer, const std::string& data) {
             HandleKick(peer, payload);
         } else if (type == "voice_signal") {
             HandleVoiceSignal(peer, payload);
+        } else if (type == "private_msg") {
+            HandlePrivateMessage(peer, payload);
+        } else if (type == "get_dm_history") {
+            HandleGetDMHistory(peer, payload);
+        } else if (type == "change_avatar") {
+            HandleChangeAvatar(peer, payload);
+        } else if (type == "typing_status") {
+            HandleTypingStatus(peer, payload);
         }
     } catch (const std::exception& e) {
         std::cerr << "[ENet] Error parsing packet: " << e.what() << std::endl;
@@ -148,7 +156,8 @@ void ServerChat::HandleLogin(ENetPeer* peer, const nlohmann::json& data) {
 
     std::string role;
     int approved = 0;
-    if (ServerAuth::Login(username, passwordHash, role, approved)) {
+    int avatarId = 0;
+    if (ServerAuth::Login(username, passwordHash, role, approved, avatarId)) {
         if (approved == 0) {
             std::cout << "[ENet] Login denied (unapproved) for user: " << username << std::endl;
             nlohmann::json response = {
@@ -164,12 +173,14 @@ void ServerChat::HandleLogin(ENetPeer* peer, const nlohmann::json& data) {
         m_sessions[peer].authenticated = true;
         m_sessions[peer].username = username;
         m_sessions[peer].role = role;
+        m_sessions[peer].avatar_id = avatarId;
 
         // Respond success
         nlohmann::json response = {
             {"success", true},
             {"username", username},
-            {"role", role}
+            {"role", role},
+            {"avatar_id", avatarId}
         };
         SendPacket(peer, "login_response", response);
 
@@ -204,7 +215,7 @@ void ServerChat::HandleLogin(ENetPeer* peer, const nlohmann::json& data) {
         nlohmann::json userList = nlohmann::json::array();
         for (const auto& [p, session] : m_sessions) {
             if (session.authenticated) {
-                userList.push_back({{"username", session.username}, {"role", session.role}});
+                userList.push_back({{"username", session.username}, {"role", session.role}, {"avatar_id", session.avatar_id}});
             }
         }
         BroadcastMessage("user_list", userList);
@@ -420,4 +431,103 @@ void ServerChat::SendPendingUsersListToAdmins() {
             SendPacket(peer, "pending_users_list", payload);
         }
     }
+}
+
+void ServerChat::HandlePrivateMessage(ENetPeer* peer, const nlohmann::json& payload) {
+    auto it = m_sessions.find(peer);
+    if (it == m_sessions.end() || !it->second.authenticated) return;
+
+    std::string sender = it->second.username;
+    std::string to = payload.value("to", "");
+    std::string content = payload.value("content", "");
+    if (to.empty() || content.empty()) return;
+
+    int64_t timestamp = Utils::GetCurrentTimestamp();
+
+    std::string room = (sender < to) ? ("dm:" + sender + ":" + to) : ("dm:" + to + ":" + sender);
+    DB::GetInstance().SaveMessage(room, sender, content, timestamp);
+
+    nlohmann::json msg = {
+        {"sender", sender},
+        {"to", to},
+        {"content", content},
+        {"timestamp", timestamp}
+    };
+
+    ENetPeer* targetPeer = nullptr;
+    for (const auto& [p, session] : m_sessions) {
+        if (session.authenticated && session.username == to) {
+            targetPeer = p;
+            break;
+        }
+    }
+
+    if (targetPeer) {
+        SendPacket(targetPeer, "private_msg", msg);
+    }
+    SendPacket(peer, "private_msg", msg);
+}
+
+void ServerChat::HandleGetDMHistory(ENetPeer* peer, const nlohmann::json& payload) {
+    auto it = m_sessions.find(peer);
+    if (it == m_sessions.end() || !it->second.authenticated) return;
+
+    std::string sender = it->second.username;
+    std::string withUser = payload.value("with_user", "");
+    if (withUser.empty()) return;
+
+    std::string room = (sender < withUser) ? ("dm:" + sender + ":" + withUser) : ("dm:" + withUser + ":" + sender);
+
+    std::vector<ChatMessage> history = DB::GetInstance().GetLastMessages(room, 50);
+    nlohmann::json historyArray = nlohmann::json::array();
+    for (const auto& msg : history) {
+        nlohmann::json item = {
+            {"sender", msg.sender},
+            {"content", msg.content},
+            {"timestamp", msg.timestamp}
+        };
+        historyArray.push_back(item);
+    }
+
+    nlohmann::json response = {
+        {"with_user", withUser},
+        {"messages", historyArray}
+    };
+    SendPacket(peer, "dm_history", response);
+}
+
+void ServerChat::HandleChangeAvatar(ENetPeer* peer, const nlohmann::json& payload) {
+    auto it = m_sessions.find(peer);
+    if (it == m_sessions.end() || !it->second.authenticated) return;
+
+    std::string username = it->second.username;
+    int avatarId = payload.value("avatar_id", 0);
+
+    if (DB::GetInstance().UpdateUserAvatar(username, avatarId)) {
+        it->second.avatar_id = avatarId;
+        std::cout << "[ENet] User '" << username << "' updated avatar_id to " << avatarId << std::endl;
+
+        nlohmann::json userList = nlohmann::json::array();
+        for (const auto& [p, session] : m_sessions) {
+            if (session.authenticated) {
+                userList.push_back({{"username", session.username}, {"role", session.role}, {"avatar_id", session.avatar_id}});
+            }
+        }
+        BroadcastMessage("user_list", userList);
+    }
+}
+
+void ServerChat::HandleTypingStatus(ENetPeer* peer, const nlohmann::json& payload) {
+    auto it = m_sessions.find(peer);
+    if (it == m_sessions.end() || !it->second.authenticated) return;
+
+    std::string username = it->second.username;
+    bool isTyping = payload.value("is_typing", false);
+
+    nlohmann::json forward = {
+        {"username", username},
+        {"is_typing", isTyping}
+    };
+
+    BroadcastMessage("typing_status", forward, peer);
 }

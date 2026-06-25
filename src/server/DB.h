@@ -22,7 +22,8 @@ public:
 
     // User operations
     bool CreateUser(const std::string& username, const std::string& passwordHash, const std::string& role, int approved = 0);
-    bool VerifyUser(const std::string& username, const std::string& passwordHash, std::string& outRole, int& outApproved);
+    bool VerifyUser(const std::string& username, const std::string& passwordHash, std::string& outRole, int& outApproved, int& outAvatarId);
+    bool UpdateUserAvatar(const std::string& username, int avatarId);
     bool UserExists(const std::string& username);
     bool GetMessageById(int64_t id, ChatMessage& outMsg);
     std::vector<std::string> GetPendingUsers();

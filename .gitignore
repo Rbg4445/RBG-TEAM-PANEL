@@ -6,3 +6,4 @@ CMakeSettings.json
 x64/
 *.zip
 dist_client/
+fluxer-main/

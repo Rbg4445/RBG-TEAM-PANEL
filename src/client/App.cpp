@@ -13,6 +13,38 @@
 #include "Voice.h"
 #include "Utils.h"
 #include "logo_data.h"
+#include "avatar_data.h"
+#include <fstream>
+
+static void SavePrefs(const std::string& user, const std::string& pass, bool remember) {
+    try {
+        nlohmann::json j;
+        j["username"] = user;
+        j["password"] = pass;
+        j["remember_me"] = remember;
+        std::ofstream f("client_prefs.json");
+        if (f.is_open()) {
+            f << j.dump(4);
+        }
+    } catch (...) {}
+}
+
+static void LoadPrefs(char* user, size_t userSize, char* pass, size_t passSize, bool& remember) {
+    try {
+        std::ifstream f("client_prefs.json");
+        if (f.is_open()) {
+            nlohmann::json j;
+            f >> j;
+            remember = j.value("remember_me", false);
+            if (remember) {
+                std::string u = j.value("username", "");
+                std::string p = j.value("password", "");
+                strncpy(user, u.c_str(), userSize - 1);
+                strncpy(pass, p.c_str(), passSize - 1);
+            }
+        }
+    } catch (...) {}
+}
 #include <iostream>
 #include <chrono>
 #include <iomanip>
@@ -245,12 +277,18 @@ struct DynamicVulkanTexture {
 
 static DynamicVulkanTexture g_ScreenShareTexture;
 static DynamicVulkanTexture g_LogoTexture;
+static DynamicVulkanTexture g_AvatarTextures[AVATAR_COUNT];
 
-enum class ActiveTab { CHAT, VOICE, MODERATION, SETTINGS };
+enum class ActiveTab { CHAT, DMS, VOICE, MODERATION, SETTINGS };
 static ActiveTab g_ActiveTab = ActiveTab::CHAT;
 static bool g_ShowUserList = true; // Toggle user list inside Chat
 static int64_t g_ReplyToId = 0;
 static std::string g_ReplyToSender = "";
+static std::string g_SelectedDMUser = "";
+static bool g_RememberMe = false;
+static bool g_WasLoggedIn = false;
+static bool g_AmITyping = false;
+static float g_MyTypingTimer = 0.f;
 
 
 // ---- Toast system ----
@@ -279,9 +317,9 @@ void DestroySwapchain();
 void CleanupVulkan();
 void ApplyDarkTheme();
 void ApplyLightTheme();
-void DrawAvatar(ImVec2 center, float radius, const std::string& username, const std::string& role);
+void DrawAvatar(ImVec2 center, float radius, const std::string& username, const std::string& role, int avatarId = -1);
 void RenderToasts(const ImGuiIO& io, float dt);
-void RenderDashboard(const ImGuiIO& io, char* messageBuffer, char* serverIp);
+void RenderDashboard(const ImGuiIO& io, char* messageBuffer, char* serverIp, float dt);
 std::string FormatTimestamp(int64_t ts);
 
 // ================================================================
@@ -328,11 +366,12 @@ int RunClientApp()
     
     ImFontGlyphRangesBuilder builder;
     builder.AddRanges(io.Fonts->GetGlyphRangesDefault());
-    const ImWchar turkish_ranges[] = {
+    const ImWchar custom_ranges[] = {
         0x0100, 0x017F, // Latin Extended-A (includes Turkish characters: Ğ, ğ, İ, ı, Ş, ş)
+        0x2600, 0x27BF, // Dingbats & Miscellaneous Symbols (covers stars, hearts, skull, crossed swords, biohazard, pencil, etc.)
         0
     };
-    builder.AddRanges(turkish_ranges);
+    builder.AddRanges(custom_ranges);
     static ImVector<ImWchar> ranges;
     ranges.clear();
     builder.BuildRanges(&ranges);
@@ -400,12 +439,21 @@ int RunClientApp()
     g_LogoTexture.Create(LOGO_WIDTH, LOGO_HEIGHT);
     g_LogoTexture.Update(LOGO_RGBA);
 
+    // Initialize avatar textures
+    for (int i = 0; i < AVATAR_COUNT; ++i) {
+        g_AvatarTextures[i].Create(AVATAR_WIDTH, AVATAR_HEIGHT);
+        g_AvatarTextures[i].Update(AVATARS_RGBA[i]);
+    }
+
     // UI state
     char serverIp[64]       = "147.185.221.180:40632";
     char username[64]       = "";
     char password[64]       = "";
     char messageBuffer[256] = "";
     bool voiceConnected     = false;
+
+    // Load saved credentials if remember me was enabled
+    LoadPrefs(username, sizeof(username), password, sizeof(password), g_RememberMe);
 
     auto lastTime = std::chrono::steady_clock::now();
 
@@ -424,6 +472,15 @@ int RunClientApp()
         // Networking
         ClientChat::GetInstance().Poll(0);
         if (ClientAuth::GetInstance().IsLoggedIn()) {
+            if (!g_WasLoggedIn) {
+                g_WasLoggedIn = true;
+                if (g_RememberMe) {
+                    SavePrefs(username, password, true);
+                } else {
+                    SavePrefs("", "", false);
+                }
+            }
+
             if (!voiceConnected) {
                 ClientVoice::GetInstance().Init();
                 ClientVoice::GetInstance().Register(ClientAuth::GetInstance().GetUsername());
@@ -458,6 +515,15 @@ int RunClientApp()
             }
 
         } else {
+            // Reset remember me login tracking flag
+            // (static inside if block will not be reset directly, so let's use a flag, but since static wasLoggedIn is local to the other branch, let's declare a file-scope static or just use a helper flag, or change the static to a static file-level flag. Let's make it a file-level static by removing the local static and declaring it at file scope instead.)
+            // Wait, let's just make it a global static variable instead to make it easy to modify!
+            // Let's modify this chunk to use a global static variable which is much cleaner.
+            // Oh, let's declare `static bool g_WasLoggedIn = false;` in the globals.
+            // That is much better! Let's update this chunk to set `g_WasLoggedIn = false;` when not logged in.
+            // And in the true block we check `if (!g_WasLoggedIn) { g_WasLoggedIn = true; ... }`
+            g_WasLoggedIn = false;
+
             if (voiceConnected) {
                 ClientVoice::GetInstance().Close();
                 voiceConnected = false;
@@ -507,7 +573,7 @@ int RunClientApp()
         if (!ClientAuth::GetInstance().IsLoggedIn()) {
             ImGui::SetNextWindowPos(ImVec2(io.DisplaySize.x*0.5f, io.DisplaySize.y*0.5f),
                                     ImGuiCond_Always, ImVec2(0.5f, 0.5f));
-            ImGui::SetNextWindowSize(ImVec2(440, 520), ImGuiCond_Always); // Increased height to fit logo and fields
+            ImGui::SetNextWindowSize(ImVec2(440, 560), ImGuiCond_Always); // Increased height to fit logo, fields, remember me
             
             ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 16.f);
             ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(28.f, 28.f));
@@ -553,11 +619,19 @@ int RunClientApp()
 
                 // Password input
                 ImGui::Text("Sifre:");
+                ImGui::SameLine(ImGui::GetWindowWidth() - 95.f);
+                static bool showPwd = false;
+                ImGui::Checkbox("Goster##pwd_chk", &showPwd);
                 ImGui::Dummy(ImVec2(0, 2));
                 ImGui::SetNextItemWidth(-1);
-                bool enterPressed = ImGui::InputText("##pwd", password, sizeof(password),
-                    ImGuiInputTextFlags_Password | ImGuiInputTextFlags_EnterReturnsTrue);
-                ImGui::Dummy(ImVec2(0, 16));
+                ImGuiInputTextFlags pwdFlags = ImGuiInputTextFlags_EnterReturnsTrue;
+                if (!showPwd) pwdFlags |= ImGuiInputTextFlags_Password;
+                bool enterPressed = ImGui::InputText("##pwd", password, sizeof(password), pwdFlags);
+                ImGui::Dummy(ImVec2(0, 6));
+
+                // Remember me checkbox
+                ImGui::Checkbox("Beni Hatirla", &g_RememberMe);
+                ImGui::Dummy(ImVec2(0, 10));
 
                 bool doLogin = enterPressed;
                 
@@ -606,15 +680,20 @@ int RunClientApp()
                 ImGui::Dummy(ImVec2(0, 8));
 
                 ImGui::Text("Sifre:");
+                ImGui::SameLine(ImGui::GetWindowWidth() - 95.f);
+                static bool showRegPwd = false;
+                ImGui::Checkbox("Goster##reg_chk", &showRegPwd);
                 ImGui::Dummy(ImVec2(0, 2));
                 ImGui::SetNextItemWidth(-1);
-                ImGui::InputText("##regpwd", regPassword, sizeof(regPassword), ImGuiInputTextFlags_Password);
+                ImGuiInputTextFlags regPwdFlags = 0;
+                if (!showRegPwd) regPwdFlags |= ImGuiInputTextFlags_Password;
+                ImGui::InputText("##regpwd", regPassword, sizeof(regPassword), regPwdFlags);
                 ImGui::Dummy(ImVec2(0, 8));
 
                 ImGui::Text("Sifre Tekrar:");
                 ImGui::Dummy(ImVec2(0, 2));
                 ImGui::SetNextItemWidth(-1);
-                ImGui::InputText("##regconfirm", regConfirmPassword, sizeof(regConfirmPassword), ImGuiInputTextFlags_Password);
+                ImGui::InputText("##regconfirm", regConfirmPassword, sizeof(regConfirmPassword), regPwdFlags);
                 ImGui::Dummy(ImVec2(0, 16));
 
                 ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.18f, 0.6f, 0.38f, 1.0f));
@@ -692,7 +771,7 @@ int RunClientApp()
         //  MAIN DASHBOARD
         // ============================================================
         else {
-            RenderDashboard(io, messageBuffer, serverIp);
+            RenderDashboard(io, messageBuffer, serverIp, dt);
         }
 
         // ============================================================
@@ -726,6 +805,9 @@ int RunClientApp()
     vkDeviceWaitIdle(g_Device);
     g_ScreenShareTexture.Destroy();
     g_LogoTexture.Destroy();
+    for (int i = 0; i < AVATAR_COUNT; ++i) {
+        g_AvatarTextures[i].Destroy();
+    }
     ClientVoice::GetInstance().Close();
     ClientChat::GetInstance().Close();
     ImGui_ImplVulkan_Shutdown();
@@ -750,7 +832,7 @@ static std::string GetUserRole(const std::string& username) {
 // ================================================================
 //  RenderDashboard — Role-based & Tabbed Redesign
 // ================================================================
-void RenderDashboard(const ImGuiIO& io, char* messageBuffer, char* serverIp)
+void RenderDashboard(const ImGuiIO& io, char* messageBuffer, char* serverIp, float dt)
 {
     const std::string& role     = ClientAuth::GetInstance().GetRole();
     const std::string& username = ClientAuth::GetInstance().GetUsername();
@@ -839,7 +921,9 @@ void RenderDashboard(const ImGuiIO& io, char* messageBuffer, char* serverIp)
         ImGui::Separator();
 
         // Messages scroll area
+        bool isAnyOtherTyping = !ClientChat::GetInstance().GetTypingUsers().empty();
         float inputOffset = (g_ReplyToId > 0) ? -104.f : -74.f;
+        if (isAnyOtherTyping) inputOffset -= 22.f;
         ImGui::BeginChild("##Msgs", ImVec2(0, inputOffset), true);
         for (const auto& msg : ClientChat::GetInstance().GetMessages()) {
             if (msg.sender == "[Sistem]") {
@@ -946,6 +1030,22 @@ void RenderDashboard(const ImGuiIO& io, char* messageBuffer, char* serverIp)
             ImGui::PopStyleColor();
         }
 
+        // Typing Status Banner
+        const auto& typingUsers = ClientChat::GetInstance().GetTypingUsers();
+        if (!typingUsers.empty()) {
+            std::string typingText = "";
+            if (typingUsers.size() == 1) {
+                typingText = typingUsers[0] + " yaziyor...";
+            } else if (typingUsers.size() == 2) {
+                typingText = typingUsers[0] + " ve " + typingUsers[1] + " yaziyor...";
+            } else {
+                typingText = "Birkac kisi yaziyor...";
+            }
+            ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.5f, 0.8f, 0.5f, 1.0f));
+            ImGui::Text("%s", typingText.c_str());
+            ImGui::PopStyleColor();
+        }
+
         // Input Bar
         ImGui::Spacing();
         ImGui::PushStyleVar(ImGuiStyleVar_FrameRounding, 8.f);
@@ -960,6 +1060,26 @@ void RenderDashboard(const ImGuiIO& io, char* messageBuffer, char* serverIp)
         }
         
         bool enter = ImGui::InputTextWithHint("##msg", "Mesaj yazin veya mesaja yanit verin...", messageBuffer, 256, ImGuiInputTextFlags_EnterReturnsTrue);
+        
+        // Typing status update logic
+        if (ImGui::IsItemActive() && strlen(messageBuffer) > 0) {
+            g_MyTypingTimer += dt;
+            if (!g_AmITyping) {
+                g_AmITyping = true;
+                ClientChat::GetInstance().SendTypingStatus(true);
+            }
+            if (g_MyTypingTimer >= 3.0f) {
+                g_MyTypingTimer = 0.f;
+                ClientChat::GetInstance().SendTypingStatus(true);
+            }
+        } else {
+            if (g_AmITyping) {
+                g_AmITyping = false;
+                g_MyTypingTimer = 0.f;
+                ClientChat::GetInstance().SendTypingStatus(false);
+            }
+        }
+
         ImGui::PopItemWidth();
         
         ImGui::SameLine();
@@ -977,6 +1097,12 @@ void RenderDashboard(const ImGuiIO& io, char* messageBuffer, char* serverIp)
             reclaim_focus = true;
             g_ReplyToId = 0;
             g_ReplyToSender = "";
+            // Reset typing status immediately on send
+            if (g_AmITyping) {
+                g_AmITyping = false;
+                g_MyTypingTimer = 0.f;
+                ClientChat::GetInstance().SendTypingStatus(false);
+            }
         }
         ImGui::EndChild();
 
@@ -1000,9 +1126,238 @@ void RenderDashboard(const ImGuiIO& io, char* messageBuffer, char* serverIp)
                 dl->AddCircleFilled(ImVec2(p.x + 6, p.y + 8), 5.f, ImGui::ColorConvertFloat4ToU32(uc));
                 ImGui::Dummy(ImVec2(14, 0)); ImGui::SameLine();
                 ImGui::TextColored(uc, "%s", u.username.c_str());
+
+                // Draw pencil if typing
+                const auto& typingList = ClientChat::GetInstance().GetTypingUsers();
+                if (std::find(typingList.begin(), typingList.end(), u.username) != typingList.end()) {
+                    ImGui::SameLine();
+                    ImGui::TextColored(ImVec4(0.5f, 0.8f, 0.5f, 1.0f), "✏");
+                }
             }
             ImGui::EndChild();
         }
+        ImGui::EndChild();
+    }
+
+    // ============================================================
+    //  TAB 1.5: DMS (Direct Messages)
+    // ============================================================
+    else if (g_ActiveTab == ActiveTab::DMS) {
+        float leftWidth = 240.f;
+        float rightWidth = ImGui::GetContentRegionAvail().x - leftWidth - 8.f;
+
+        // Sol panel: Direct message contacts list
+        ImGui::BeginChild("##DMSContacts", ImVec2(leftWidth, 0), true);
+        ImGui::TextColored(ImVec4(1.0f, 0.75f, 0.0f, 1.0f), "Kisiler");
+        ImGui::Separator();
+        ImGui::Dummy(ImVec2(0, 4));
+
+        std::vector<OnlineUser> otherUsers;
+        for (const auto& u : ClientChat::GetInstance().GetOnlineUsers()) {
+            if (u.username != username) {
+                otherUsers.push_back(u);
+            }
+        }
+
+        if (otherUsers.empty()) {
+            ImGui::TextDisabled("Sohbet edecek kimse yok.");
+        } else {
+            for (const auto& u : otherUsers) {
+                bool isSelected = (g_SelectedDMUser == u.username);
+                if (isSelected) {
+                    ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.18f, 0.42f, 0.78f, 0.8f));
+                } else {
+                    ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.15f, 0.15f, 0.18f, 0.4f));
+                }
+
+                ImGui::PushID(u.username.c_str());
+                ImVec2 cursor = ImGui::GetCursorScreenPos();
+                
+                // Align content
+                if (ImGui::Button("##user_dm_btn", ImVec2(-1, 38))) {
+                    g_SelectedDMUser = u.username;
+                    ClientChat::GetInstance().SendGetDMHistory(g_SelectedDMUser);
+                }
+                
+                ImGui::PopStyleColor();
+
+                // Draw user avatar inside button
+                ImGui::SetCursorScreenPos(ImVec2(cursor.x + 8.f, cursor.y + 5.f));
+                DrawAvatar(ImVec2(cursor.x + 8.f + 14.f, cursor.y + 5.f + 14.f), 14.f, u.username, u.role, u.avatar_id);
+
+                // Draw username text inside button
+                ImGui::SetCursorScreenPos(ImVec2(cursor.x + 44.f, cursor.y + 9.f));
+                ImVec4 uc = ImVec4(1.f, 1.f, 1.f, 1.f);
+                if      (u.role == "RBG")   uc = ImVec4(1.0f, 0.6f, 0.0f, 1.f);
+                else if (u.role == "Owner") uc = ImVec4(0.8f, 0.2f, 0.8f, 1.f);
+                else if (u.role == "Admin") uc = ImVec4(1.0f, 0.3f, 0.3f, 1.f);
+                else if (u.role == "Mod")   uc = ImVec4(0.2f, 0.8f, 0.2f, 1.f);
+                ImGui::TextColored(uc, "%s", u.username.c_str());
+
+                // Check typing
+                const auto& typingList = ClientChat::GetInstance().GetTypingUsers();
+                if (std::find(typingList.begin(), typingList.end(), u.username) != typingList.end()) {
+                    ImGui::SameLine();
+                    ImGui::TextColored(ImVec4(0.5f, 0.8f, 0.5f, 1.0f), "✏");
+                }
+
+                ImGui::PopID();
+                ImGui::Dummy(ImVec2(0, 2.f));
+            }
+        }
+        ImGui::EndChild();
+
+        ImGui::SameLine();
+
+        // Sağ panel: Active DM Chat window
+        ImGui::BeginChild("##DMSWindow", ImVec2(rightWidth, 0), true, ImGuiWindowFlags_NoScrollbar);
+        if (g_SelectedDMUser.empty()) {
+            ImGui::Dummy(ImVec2(0, 100.f));
+            float panelW = ImGui::GetContentRegionAvail().x;
+            std::string hint = "Ozel mesajlasmak icin sol taraftan bir kullanici secin.";
+            float textW = ImGui::CalcTextSize(hint.c_str()).x;
+            ImGui::SetCursorPosX((panelW - textW) * 0.5f);
+            ImGui::TextDisabled("%s", hint.c_str());
+        } else {
+            // Active User info header
+            std::string userRole = "User";
+            int userAvatar = 0;
+            for (const auto& u : ClientChat::GetInstance().GetOnlineUsers()) {
+                if (u.username == g_SelectedDMUser) {
+                    userRole = u.role;
+                    userAvatar = u.avatar_id;
+                    break;
+                }
+            }
+
+            ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.3f, 0.8f, 1.0f, 1.f));
+            ImGui::Text("@ %s ile Ozel Mesajlasma", g_SelectedDMUser.c_str());
+            ImGui::PopStyleColor();
+            ImGui::SameLine();
+            ImGui::TextDisabled("[%s]", userRole.c_str());
+            ImGui::Separator();
+
+            // Message scroll container
+            float typingOffset = 0.f;
+            const auto& typingList = ClientChat::GetInstance().GetTypingUsers();
+            bool isTargetTyping = (std::find(typingList.begin(), typingList.end(), g_SelectedDMUser) != typingList.end());
+            
+            float inputOffset = isTargetTyping ? -74.f : -52.f;
+            ImGui::BeginChild("##DMMessages", ImVec2(0, inputOffset), true);
+
+            for (const auto& msg : ClientChat::GetInstance().GetPrivateMessages()) {
+                // Filter messages only between us and selected user
+                if ((msg.sender == username && msg.to == g_SelectedDMUser) ||
+                    (msg.sender == g_SelectedDMUser && msg.to == username)) {
+                    
+                    ImGui::Spacing();
+                    
+                    // Draw Avatar
+                    ImVec2 cp = ImGui::GetCursorScreenPos();
+                    float radius = 16.f;
+                    ImVec2 avatarCenter(cp.x + radius + 4.f, cp.y + radius + 4.f);
+                    std::string senderRole = (msg.sender == username) ? role : userRole;
+                    int senderAvatar = (msg.sender == username) ? ClientChat::GetInstance().GetMyAvatarId() : userAvatar;
+                    DrawAvatar(avatarCenter, radius, msg.sender, senderRole, senderAvatar);
+                    
+                    ImGui::SetCursorPosX(ImGui::GetCursorPosX() + 2 * radius + 14.f);
+                    
+                    ImGui::BeginGroup();
+                        ImVec4 uc = ImVec4(0.7f, 0.7f, 0.7f, 1.f);
+                        if      (senderRole == "RBG")   uc = ImVec4(1.0f, 0.6f, 0.0f, 1.f);
+                        else if (senderRole == "Owner") uc = ImVec4(0.8f, 0.2f, 0.8f, 1.f);
+                        else if (senderRole == "Admin") uc = ImVec4(1.0f, 0.3f, 0.3f, 1.f);
+                        else if (senderRole == "Mod")   uc = ImVec4(0.2f, 0.8f, 0.2f, 1.f);
+                        
+                        ImGui::TextColored(uc, "%s", msg.sender.c_str());
+                        ImGui::SameLine();
+                        
+                        ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(uc.x, uc.y, uc.z, 0.8f));
+                        ImGui::TextDisabled("[%s]", senderRole.c_str());
+                        ImGui::PopStyleColor();
+                        ImGui::SameLine();
+                        
+                        ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.45f, 0.45f, 0.48f, 1.f));
+                        ImGui::Text("- %s", FormatTimestamp(msg.timestamp).c_str());
+                        ImGui::PopStyleColor();
+                        
+                        ImGui::Dummy(ImVec2(0.f, 2.f));
+                        ImGui::TextWrapped("%s", msg.content.c_str());
+                    ImGui::EndGroup();
+                    
+                    ImGui::Spacing();
+                    ImGui::Separator();
+                }
+            }
+            if (ImGui::GetScrollY() >= ImGui::GetScrollMaxY())
+                ImGui::SetScrollHereY(1.f);
+            ImGui::EndChild();
+
+            // Typing Status Banner for DM
+            if (isTargetTyping) {
+                ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.5f, 0.8f, 0.5f, 1.0f));
+                ImGui::Text("%s yaziyor...", g_SelectedDMUser.c_str());
+                ImGui::PopStyleColor();
+                ImGui::Spacing();
+            }
+
+            // Input Bar
+            ImGui::PushStyleVar(ImGuiStyleVar_FrameRounding, 8.f);
+            ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(12.f, 8.f));
+            ImGui::PushStyleColor(ImGuiCol_FrameBg, ImVec4(0.15f, 0.15f, 0.18f, 1.f));
+            
+            ImGui::PushItemWidth(ImGui::GetContentRegionAvail().x - 130.f);
+            static bool dm_reclaim_focus = false;
+            if (dm_reclaim_focus) {
+                ImGui::SetKeyboardFocusHere(0);
+                dm_reclaim_focus = false;
+            }
+            
+            static char dmBuffer[256] = "";
+            bool enter = ImGui::InputTextWithHint("##dm_msg", "Mesaj yazin...", dmBuffer, 256, ImGuiInputTextFlags_EnterReturnsTrue);
+            
+            // Typing status update logic for DM input
+            if (ImGui::IsItemActive() && strlen(dmBuffer) > 0) {
+                g_MyTypingTimer += dt;
+                if (!g_AmITyping) {
+                    g_AmITyping = true;
+                    ClientChat::GetInstance().SendTypingStatus(true);
+                }
+                if (g_MyTypingTimer >= 3.0f) {
+                    g_MyTypingTimer = 0.f;
+                    ClientChat::GetInstance().SendTypingStatus(true);
+                }
+            } else {
+                if (g_AmITyping) {
+                    g_AmITyping = false;
+                    g_MyTypingTimer = 0.f;
+                    ClientChat::GetInstance().SendTypingStatus(false);
+                }
+            }
+
+            ImGui::PopItemWidth();
+            
+            ImGui::SameLine();
+            ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.18f, 0.42f, 0.78f, 1.f));
+            ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.22f, 0.52f, 0.90f, 1.f));
+            bool send = ImGui::Button("Gonder##DMSend", ImVec2(110, 32));
+            ImGui::PopStyleColor(2);
+            
+            ImGui::PopStyleColor();
+            ImGui::PopStyleVar(2);
+            
+            if ((enter || send) && strlen(dmBuffer) > 0) {
+                ClientChat::GetInstance().SendPrivateMessage(g_SelectedDMUser, dmBuffer);
+                memset(dmBuffer, 0, 256);
+                dm_reclaim_focus = true;
+                if (g_AmITyping) {
+                    g_AmITyping = false;
+                    g_MyTypingTimer = 0.f;
+                    ClientChat::GetInstance().SendTypingStatus(false);
+                }
+            }
+        }
+        ImGui::EndChild();
     }
 
     // ============================================================
@@ -1323,6 +1678,65 @@ void RenderDashboard(const ImGuiIO& io, char* messageBuffer, char* serverIp)
         ImGui::Separator();
         ImGui::Dummy(ImVec2(0, 14));
 
+        // 1.5. Avatar Picker
+        ImGui::Text("Profil Resmi (Avatar) Seçimi:");
+        ImGui::Dummy(ImVec2(0, 6));
+
+        int currentAvatar = ClientChat::GetInstance().GetMyAvatarId();
+        
+        ImGui::PushStyleVar(ImGuiStyleVar_FrameRounding, 4.f);
+        ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(10.f, 10.f));
+        
+        // Default Avatar Button
+        bool isDefaultSelected = (currentAvatar == 0);
+        if (isDefaultSelected) ImGui::PushStyleColor(ImGuiCol_Border, ImVec4(1.0f, 0.75f, 0.0f, 1.0f));
+        else ImGui::PushStyleColor(ImGuiCol_Border, ImVec4(0.3f, 0.3f, 0.3f, 0.5f));
+        ImGui::PushStyleVar(ImGuiStyleVar_FrameBorderSize, 2.f);
+
+        ImGui::BeginGroup();
+        if (ImGui::Button("Varsayilan##DefaultAvatar", ImVec2(72.f, 72.f))) {
+            ClientChat::GetInstance().SendChangeAvatar(0);
+            AddToast("Varsayilan avatar secildi", ToastType::SUCCESS);
+        }
+        ImGui::EndGroup();
+        ImGui::PopStyleVar();
+        ImGui::PopStyleColor();
+
+        // Custom Avatars
+        for (int i = 0; i < AVATAR_COUNT; ++i) {
+            ImGui::SameLine();
+            bool isSelected = (currentAvatar == i + 1);
+            if (isSelected) ImGui::PushStyleColor(ImGuiCol_Border, ImVec4(1.0f, 0.75f, 0.0f, 1.0f));
+            else ImGui::PushStyleColor(ImGuiCol_Border, ImVec4(0.3f, 0.3f, 0.3f, 0.5f));
+            ImGui::PushStyleVar(ImGuiStyleVar_FrameBorderSize, 2.f);
+            
+            ImGui::BeginGroup();
+            if (g_AvatarTextures[i].DescriptorSet != VK_NULL_HANDLE) {
+                // Draw image with active status checking
+                ImGui::PushID(i);
+                if (ImGui::ImageButton((ImTextureID)g_AvatarTextures[i].DescriptorSet, ImVec2(56.f, 56.f))) {
+                    ClientChat::GetInstance().SendChangeAvatar(i + 1);
+                    AddToast("Profil resmi güncellendi", ToastType::SUCCESS);
+                }
+                ImGui::PopID();
+            } else {
+                std::string btnLabel = std::to_string(i + 1) + "##custom_av";
+                if (ImGui::Button(btnLabel.c_str(), ImVec2(72.f, 72.f))) {
+                    ClientChat::GetInstance().SendChangeAvatar(i + 1);
+                    AddToast("Profil resmi güncellendi", ToastType::SUCCESS);
+                }
+            }
+            ImGui::EndGroup();
+            
+            ImGui::PopStyleVar();
+            ImGui::PopStyleColor();
+        }
+        ImGui::PopStyleVar(2);
+
+        ImGui::Dummy(ImVec2(0, 14));
+        ImGui::Separator();
+        ImGui::Dummy(ImVec2(0, 14));
+
         // 2. Change Password UI
         ImGui::Text("Şifre Değiştirme:");
         ImGui::Dummy(ImVec2(0, 6));
@@ -1422,6 +1836,7 @@ void RenderDashboard(const ImGuiIO& io, char* messageBuffer, char* serverIp)
 
     // Navigation Tabs
     RenderTabButton("Genel Sohbet", ActiveTab::CHAT, g_ActiveTab);
+    RenderTabButton("Ozel Mesajlar", ActiveTab::DMS, g_ActiveTab);
     RenderTabButton("Sesli Sohbet", ActiveTab::VOICE, g_ActiveTab);
     if (isMod) {
         RenderTabButton("Yonetim Paneli", ActiveTab::MODERATION, g_ActiveTab);
@@ -1543,42 +1958,73 @@ void RenderDashboard(const ImGuiIO& io, char* messageBuffer, char* serverIp)
 // ================================================================
 //  DrawAvatar — colored circle with initial letter
 // ================================================================
-void DrawAvatar(ImVec2 center, float radius, const std::string& username, const std::string& role)
+void DrawAvatar(ImVec2 center, float radius, const std::string& username, const std::string& role, int avatarId)
 {
     ImDrawList* dl = ImGui::GetWindowDrawList();
 
-    // Role-based color
-    ImU32 bg = IM_COL32(80,80,80,255);
-    if      (role=="RBG")   bg = IM_COL32(200,120,0,255);
-    else if (role=="Owner") bg = IM_COL32(180,40,180,255);
-    else if (role=="Admin") bg = IM_COL32(220,50,50,255);
-    else if (role=="Mod")   bg = IM_COL32(40,180,40,255);
+    // Resolve avatarId if not provided
+    int avatar = avatarId;
+    if (avatar == -1) {
+        if (username == ClientAuth::GetInstance().GetUsername()) {
+            avatar = ClientChat::GetInstance().GetMyAvatarId();
+        } else {
+            avatar = 0;
+            for (const auto& u : ClientChat::GetInstance().GetOnlineUsers()) {
+                if (u.username == username) {
+                    avatar = u.avatar_id;
+                    break;
+                }
+            }
+        }
+    }
 
     // Outer glow
     dl->AddCircleFilled(center, radius + 3, IM_COL32(255,255,255,30));
-    dl->AddCircleFilled(center, radius, bg);
 
-    // Initial letter
-    if (!username.empty()) {
-        std::string init = "";
-        unsigned char c = (unsigned char)username[0];
-        if (c < 0x80) {
-            init += (char)toupper(c);
-        } else {
-            size_t len = 0;
-            if ((c & 0xE0) == 0xC0) len = 2;
-            else if ((c & 0xF0) == 0xE0) len = 3;
-            else if ((c & 0xF8) == 0xF0) len = 4;
-            
-            if (len > 0 && username.length() >= len) {
-                init = username.substr(0, len);
-            } else {
+    if (avatar > 0 && avatar <= AVATAR_COUNT && g_AvatarTextures[avatar - 1].DescriptorSet != VK_NULL_HANDLE) {
+        ImVec2 p_min(center.x - radius, center.y - radius);
+        ImVec2 p_max(center.x + radius, center.y + radius);
+        dl->AddImage((ImTextureID)g_AvatarTextures[avatar - 1].DescriptorSet, p_min, p_max);
+        
+        // Circular border outline matching role
+        ImU32 borderCol = IM_COL32(80,80,80,255);
+        if      (role=="RBG")   borderCol = IM_COL32(200,120,0,255);
+        else if (role=="Owner") borderCol = IM_COL32(180,40,180,255);
+        else if (role=="Admin") borderCol = IM_COL32(220,50,50,255);
+        else if (role=="Mod")   borderCol = IM_COL32(40,180,40,255);
+        dl->AddCircle(center, radius, borderCol, 0, 1.5f);
+    } else {
+        // Role-based color
+        ImU32 bg = IM_COL32(80,80,80,255);
+        if      (role=="RBG")   bg = IM_COL32(200,120,0,255);
+        else if (role=="Owner") bg = IM_COL32(180,40,180,255);
+        else if (role=="Admin") bg = IM_COL32(220,50,50,255);
+        else if (role=="Mod")   bg = IM_COL32(40,180,40,255);
+
+        dl->AddCircleFilled(center, radius, bg);
+
+        // Initial letter
+        if (!username.empty()) {
+            std::string init = "";
+            unsigned char c = (unsigned char)username[0];
+            if (c < 0x80) {
                 init += (char)toupper(c);
+            } else {
+                size_t len = 0;
+                if ((c & 0xE0) == 0xC0) len = 2;
+                else if ((c & 0xF0) == 0xE0) len = 3;
+                else if ((c & 0xF8) == 0xF0) len = 4;
+                
+                if (len > 0 && username.length() >= len) {
+                    init = username.substr(0, len);
+                } else {
+                    init += (char)toupper(c);
+                }
             }
+            ImVec2 ts = ImGui::CalcTextSize(init.c_str());
+            dl->AddText(ImVec2(center.x - ts.x*0.5f, center.y - ts.y*0.5f),
+                        IM_COL32(255,255,255,255), init.c_str());
         }
-        ImVec2 ts = ImGui::CalcTextSize(init.c_str());
-        dl->AddText(ImVec2(center.x - ts.x*0.5f, center.y - ts.y*0.5f),
-                    IM_COL32(255,255,255,255), init.c_str());
     }
 }
 

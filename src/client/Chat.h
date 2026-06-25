@@ -20,6 +20,14 @@ struct ClientChatMessage {
 struct OnlineUser {
     std::string username;
     std::string role;
+    int avatar_id = 0;
+};
+
+struct PrivateMessage {
+    std::string sender;
+    std::string to;
+    std::string content;
+    int64_t timestamp = 0;
 };
 
 class ClientChat {
@@ -40,6 +48,10 @@ public:
     void SendChatMessage(const std::string& content, int64_t replyToId = 0);
     void SendKick(const std::string& username);
     void SendVoiceSignal(const nlohmann::json& data);
+    void SendPrivateMessage(const std::string& toUser, const std::string& content);
+    void SendGetDMHistory(const std::string& withUser);
+    void SendChangeAvatar(int avatarId);
+    void SendTypingStatus(bool isTyping);
 
     // Voice signal callback
     using VoiceSignalCallback = std::function<void(const nlohmann::json&)>;
@@ -57,6 +69,9 @@ public:
     bool IsRegisterSuccess() const { return m_registerSuccess; }
     const std::string& GetRegisterMessage() const { return m_registerStatus; }
     void ClearRegisterResponse() { m_hasRegisterResponse = false; m_registerStatus.clear(); m_registerSuccess = false; }
+    const std::vector<PrivateMessage>& GetPrivateMessages() const { return m_privateMessages; }
+    const std::vector<std::string>& GetTypingUsers() const { return m_typingUsers; }
+    int GetMyAvatarId() const { return m_myAvatarId; }
 
     // Reset helper
     void ResetConnectionState();
@@ -84,6 +99,11 @@ private:
     bool m_hasRegisterResponse = false;
     bool m_registerSuccess = false;
     std::string m_registerStatus;
+
+    // Direct message, typing status, avatar
+    std::vector<PrivateMessage> m_privateMessages;
+    std::vector<std::string> m_typingUsers;
+    int m_myAvatarId = 0;
 };
 
 #endif // CLIENT_CHAT_H
