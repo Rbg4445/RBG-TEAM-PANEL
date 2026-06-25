@@ -868,24 +868,24 @@ void RenderDashboard(const ImGuiIO& io, char* messageBuffer, char* serverIp, flo
     ImGui::BeginChild("##MainContent", ImVec2(mainContentW, contentH), true, ImGuiWindowFlags_NoScrollbar);
 
     // Spacing from top border of Main Content
-    ImGui::Dummy(ImVec2(0, 10.f));
+    ImGui::Dummy(ImVec2(0, 16.f));
 
     // Profile Section inside Main Content Area (Top-Left)
     {
-        ImGui::Dummy(ImVec2(10.f, 0)); ImGui::SameLine();
+        ImGui::Dummy(ImVec2(16.f, 0)); ImGui::SameLine();
         ImGui::BeginGroup();
             ImVec2 cp = ImGui::GetCursorScreenPos();
             float r = 20.f; // 40px avatar for premium look
-            ImVec2 center(cp.x + r, cp.y + r);
+            ImVec2 center(cp.x + r + 6.f, cp.y + r + 6.f); // Added 6px offset to prevent top/left clipping
             DrawAvatar(center, r, username, role);
             
             // Advance cursor past the avatar (we reserve a square + some margin)
-            ImGui::Dummy(ImVec2(2 * r + 12.f, 2 * r));
+            ImGui::Dummy(ImVec2(2 * r + 12.f, 2 * r + 12.f));
             ImGui::SameLine();
             
             // Username & Role Group
             ImGui::BeginGroup();
-                ImGui::Dummy(ImVec2(0, 2.f)); // Align text vertically with avatar center
+                ImGui::Dummy(ImVec2(0, 6.f)); // Align text vertically with avatar center
                 ImGui::TextColored(ImVec4(1.f, 1.f, 1.f, 1.f), "%s", username.c_str());
                 
                 ImVec4 roleCol = ImVec4(0.7f, 0.7f, 0.7f, 1.f);
