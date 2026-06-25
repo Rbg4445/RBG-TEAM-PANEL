@@ -1361,176 +1361,277 @@ void RenderDashboard(const ImGuiIO& io, char* messageBuffer, char* serverIp, flo
     }
 
     // ============================================================
-    //  TAB 2: VOICE CALL & SCREEN SHARING
+    //  TAB 2: VOICE ROOM (Fluxer-inspired: room-based multi-participant)
     // ============================================================
     else if (g_ActiveTab == ActiveTab::VOICE) {
-        float leftWidth = ImGui::GetContentRegionAvail().x - 260.f;
-        
-        // Call Panel
-        ImGui::BeginChild("##VoiceMainPanel", ImVec2(leftWidth, 0), true, ImGuiWindowFlags_NoScrollbar);
-        ImGui::Text("Sesli ve Ekran Paylasim Odasi");
+        auto& voice = ClientVoice::GetInstance();
+        bool inRoom = voice.IsInRoom();
+        bool selfMuted    = voice.IsMuted();
+        bool selfDeafened = voice.IsDeafened();
+        auto participants = voice.GetParticipants();
+        auto status = voice.GetStatus();
+        float panelW = ImGui::GetContentRegionAvail().x - 280.f;
+
+        // ---- Left panel: Room view ----
+        ImGui::BeginChild("##VoiceRoomPanel", ImVec2(panelW, 0), true, ImGuiWindowFlags_NoScrollbar);
+
+        // Header: connection status badge (Fluxer: VoiceEngineV2ConnectionStatus)
+        {
+            ImGui::Text("Sesli Oda");
+            ImGui::SameLine();
+            ImVec4 statusColor;
+            const char* statusText;
+            switch (status) {
+                case VoiceConnectionStatus::CONNECTED:    statusColor = {0.2f,0.9f,0.3f,1.f}; statusText = " BAGLI "; break;
+                case VoiceConnectionStatus::CONNECTING:   statusColor = {1.f,0.75f,0.f,1.f};  statusText = " BAGLAN... "; break;
+                case VoiceConnectionStatus::DISCONNECTING:statusColor = {0.8f,0.4f,0.1f,1.f}; statusText = " AYRILIYOR "; break;
+                case VoiceConnectionStatus::FAILED:       statusColor = {0.9f,0.2f,0.2f,1.f}; statusText = " HATA "; break;
+                default:                                   statusColor = {0.5f,0.5f,0.5f,1.f}; statusText = " BEKLIYOR "; break;
+            }
+            ImDrawList* dl = ImGui::GetWindowDrawList();
+            ImVec2 badgePos = ImGui::GetCursorScreenPos();
+            float bw = ImGui::CalcTextSize(statusText).x + 10.f;
+            dl->AddRectFilled(badgePos, {badgePos.x+bw, badgePos.y+18.f}, IM_COL32(
+                (int)(statusColor.x*255), (int)(statusColor.y*255), (int)(statusColor.z*255), 80), 4.f);
+            ImGui::TextColored(statusColor, "%s", statusText);
+        }
         ImGui::Separator();
-        ImGui::Dummy(ImVec2(0, 10));
+        ImGui::Dummy(ImVec2(0, 8));
 
-        if (ClientVoice::GetInstance().IsInCall()) {
-            std::string callUser = ClientVoice::GetInstance().GetCurrentCallUser();
-            
-            if (ClientVoice::GetInstance().IsReceivingScreen()) {
-                // Live Screen Render
-                if (g_ScreenShareTexture.DescriptorSet != VK_NULL_HANDLE) {
-                    ImGui::TextColored(ImVec4(0.3f, 0.8f, 1.0f, 1.f), "%s kullanicisinin yayini:", callUser.c_str());
-                    
-                    float frameW = 640.f, frameH = 360.f;
-                    float availW = ImGui::GetContentRegionAvail().x;
-                    if (availW < frameW) {
-                        frameW = availW - 20.f;
-                        frameH = frameW * (270.f / 480.f);
-                    }
-                    ImGui::Image((ImTextureID)g_ScreenShareTexture.DescriptorSet, ImVec2(frameW, frameH));
-                } else {
-                    ImGui::TextDisabled("Yayina baglaniliyor, ekran bekleniyor...");
-                }
-            } else {
-                // Standard audio call view
-                ImGui::Spacing();
-                float centerPos = (ImGui::GetContentRegionAvail().x - 120.f) * 0.5f;
-                ImGui::SetCursorPosX(centerPos);
-                
-                // Pulsing visual indicator around large avatar
-                ImVec2 cp = ImGui::GetCursorScreenPos();
-                ImDrawList* dl = ImGui::GetWindowDrawList();
-                float r = 60.f;
-                ImVec2 center(cp.x + r, cp.y + r);
-                DrawAvatar(center, r, callUser, GetUserRole(callUser));
-                
-                static float wave = 0.f;
-                wave += 0.05f;
-                float pulseR = r + 10.f + 5.f * sin(wave);
-                dl->AddCircle(center, pulseR, IM_COL32(0, 220, 0, 100), 0, 2.f);
-                
-                ImGui::Dummy(ImVec2(0, 2 * r + 20));
-                
-                std::string callInfo = callUser + " ile sesli sohbet baglantisi kuruldu.";
-                float textW = ImGui::CalcTextSize(callInfo.c_str()).x;
-                ImGui::SetCursorPosX((ImGui::GetContentRegionAvail().x - textW) * 0.5f);
-                ImGui::TextColored(ImVec4(0.3f, 0.9f, 0.3f, 1.f), "%s", callInfo.c_str());
+        if (!inRoom) {
+            // ---- Room join prompt (Fluxer: connection.connectRequested) ----
+            ImGui::Dummy(ImVec2(0, 60));
+            float centerX = (ImGui::GetContentRegionAvail().x - 200.f) * 0.5f;
+            ImGui::SetCursorPosX(centerX);
+
+            // Big mic icon placeholder
+            ImDrawList* dl = ImGui::GetWindowDrawList();
+            ImVec2 iconCenter = ImGui::GetCursorScreenPos();
+            iconCenter.x += 100.f;
+            iconCenter.y += 30.f;
+            dl->AddCircleFilled(iconCenter, 36.f, IM_COL32(30, 110, 220, 80));
+            dl->AddCircle(iconCenter, 36.f, IM_COL32(80, 160, 255, 200), 0, 2.f);
+
+            ImGui::Dummy(ImVec2(0, 80));
+            std::string hint = "Sesli odaya katilmak icin asagidaki butona basin.";
+            ImGui::SetCursorPosX((ImGui::GetContentRegionAvail().x - ImGui::CalcTextSize(hint.c_str()).x) * 0.5f);
+            ImGui::TextDisabled("%s", hint.c_str());
+            ImGui::Dummy(ImVec2(0, 20));
+            ImGui::SetCursorPosX((ImGui::GetContentRegionAvail().x - 200.f) * 0.5f);
+            ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.15f, 0.55f, 0.95f, 0.9f));
+            ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.2f, 0.65f, 1.f, 1.f));
+            ImGui::PushStyleColor(ImGuiCol_ButtonActive,  ImVec4(0.1f, 0.45f, 0.85f, 1.f));
+            if (ImGui::Button("  Sesli Odaya Katil  ##join_room", ImVec2(200.f, 42.f))) {
+                voice.JoinRoom();
             }
-
-            ImGui::Dummy(ImVec2(0, 30));
-            ImGui::Separator();
-            ImGui::Dummy(ImVec2(0, 10));
-
-            // Controls
-            float btnW = (ImGui::GetContentRegionAvail().x - 24.f) / 3.f;
-
-            // 1. Mute
-            bool isMuted = ClientVoice::GetInstance().IsMuted();
-            if (isMuted) ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.7f, 0.4f, 0.1f, 0.7f));
-            else ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.18f, 0.38f, 0.68f, 0.6f));
-            if (ImGui::Button(isMuted ? "Sesi Ac" : "Sustur", ImVec2(btnW, 36))) {
-                ClientVoice::GetInstance().SetMuted(!isMuted);
-                AddToast(!isMuted ? "Mikrofon kapatildi" : "Mikrofon acildi", ToastType::INFO);
-            }
-            ImGui::PopStyleColor();
-
-            ImGui::SameLine();
-
-            // 2. Screen share
-            bool isSharing = ClientVoice::GetInstance().IsScreenSharing();
-            if (isSharing) ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.2f, 0.6f, 0.3f, 0.8f));
-            else ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.14f, 0.14f, 0.18f, 0.8f));
-            if (ImGui::Button(isSharing ? "Yayini Kapat" : "Ekran Paylas", ImVec2(btnW, 36))) {
-                ClientVoice::GetInstance().SetScreenSharing(!isSharing);
-                AddToast(!isSharing ? "Ekran paylasimi baslatildi" : "Ekran paylasimi sonlandirildi", ToastType::INFO);
-            }
-            ImGui::PopStyleColor();
-
-            ImGui::SameLine();
-
-            // 3. Hangup
-            ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.7f, 0.15f, 0.15f, 0.8f));
-            if (ImGui::Button("Sonlandir", ImVec2(btnW, 36))) {
-                ClientVoice::GetInstance().StopCall();
-                AddToast("Aramadan cikildi", ToastType::INFO);
-            }
-            ImGui::PopStyleColor();
-
-        } else if (ClientVoice::GetInstance().IsCalling()) {
-            // Calling state UI
-            ImGui::Spacing();
-            float centerPos = (ImGui::GetContentRegionAvail().x - 120.f) * 0.5f;
-            ImGui::SetCursorPosX(centerPos);
-            
-            std::string callUser = ClientVoice::GetInstance().GetCurrentCallUser();
-            
-            ImVec2 cp = ImGui::GetCursorScreenPos();
-            float r = 60.f;
-            ImVec2 center(cp.x + r, cp.y + r);
-            DrawAvatar(center, r, callUser, GetUserRole(callUser));
-            
-            ImGui::Dummy(ImVec2(0, 2 * r + 20));
-            
-            std::string callInfo = callUser + " araniyor...";
-            float textW = ImGui::CalcTextSize(callInfo.c_str()).x;
-            ImGui::SetCursorPosX((ImGui::GetContentRegionAvail().x - textW) * 0.5f);
-            ImGui::TextColored(ImVec4(0.3f, 0.8f, 1.0f, 1.f), "%s", callInfo.c_str());
-            
-            ImGui::Dummy(ImVec2(0, 30));
-            ImGui::Separator();
-            ImGui::Dummy(ImVec2(0, 10));
-            
-            float btnW = ImGui::GetContentRegionAvail().x - 24.f;
-            ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.7f, 0.15f, 0.15f, 0.8f));
-            if (ImGui::Button("Aramayi Iptal Et", ImVec2(btnW, 36))) {
-                ClientVoice::GetInstance().StopCall();
-                AddToast("Arama iptal edildi", ToastType::INFO);
-            }
-            ImGui::PopStyleColor();
+            ImGui::PopStyleColor(3);
 
         } else {
-            ImGui::Dummy(ImVec2(0, 40));
-            float panelW = ImGui::GetContentRegionAvail().x;
-            std::string hint = "Sesli veya ekran paylasimli arama baslatmak icin\nsagdaki listeden bir arkadasinizi secin.";
-            float textW = ImGui::CalcTextSize("Sesli veya ekran paylasimli arama baslatmak icin").x;
-            ImGui::SetCursorPosX((panelW - textW) * 0.5f);
-            ImGui::TextWrapped("Sesli veya ekran paylasimli arama baslatmak icin\nsagdaki listeden bir arkadasinizi secip 'Ara' butonuna basin.");
+            // ---- Participant list (Fluxer: room.participantJoined / Left) ----
+            ImGui::Text("Odadaki Kullanicilar (%d):", (int)(participants.size() + 1)); // +1 for self
+            ImGui::Separator();
+            ImGui::Dummy(ImVec2(0, 4));
+
+            static float waveTime = 0.f;
+            waveTime += 0.04f;
+
+            // Self entry
+            {
+                ImDrawList* dl = ImGui::GetWindowDrawList();
+                ImVec2 rowStart = ImGui::GetCursorScreenPos();
+                ImGui::Dummy(ImVec2(0, 52));
+                float rowEnd = ImGui::GetCursorScreenPos().y;
+                ImVec2 rowRectMin = rowStart;
+                ImVec2 rowRectMax = {rowStart.x + ImGui::GetContentRegionAvail().x, rowEnd};
+                dl->AddRectFilled(rowRectMin, rowRectMax, IM_COL32(40, 80, 140, 60), 8.f);
+                ImGui::SetCursorScreenPos(rowStart);
+
+                ImGui::Dummy(ImVec2(8.f, 0)); ImGui::SameLine();
+                ImVec2 avatarPos = ImGui::GetCursorScreenPos();
+                avatarPos.y += 8.f;
+                DrawAvatar({avatarPos.x + 18.f, avatarPos.y + 18.f}, 18.f, username, role);
+                ImGui::Dummy(ImVec2(44.f, 44.f)); ImGui::SameLine();
+                ImGui::BeginGroup();
+                ImGui::TextColored(ImVec4(0.4f, 0.8f, 1.f, 1.f), "%s", username.c_str());
+                ImGui::TextDisabled("Sen");
+                ImGui::EndGroup();
+                ImGui::SameLine(panelW - 110.f);
+                if (selfMuted)    ImGui::TextColored(ImVec4(0.9f, 0.4f, 0.2f, 1.f), "[SUSTURULDU]");
+                if (selfDeafened) ImGui::TextColored(ImVec4(0.5f, 0.5f, 0.5f, 1.f), "[SAGIR]");
+            }
+
+            ImGui::Spacing();
+
+            // Remote participants
+            for (auto& p : participants) {
+                ImDrawList* dl = ImGui::GetWindowDrawList();
+                ImVec2 rowStart = ImGui::GetCursorScreenPos();
+                ImGui::Dummy(ImVec2(0, 52));
+                ImVec2 rowEnd = ImGui::GetCursorScreenPos();
+                ImVec2 rowRectMin = rowStart;
+                ImVec2 rowRectMax = {rowStart.x + ImGui::GetContentRegionAvail().x, rowEnd.y};
+
+                // Speaking glow (Fluxer: isSpeaking detection)
+                if (p.isSpeaking && !p.isMuted) {
+                    dl->AddRectFilled(rowRectMin, rowRectMax, IM_COL32(30, 180, 60, 50), 8.f);
+                    float pulse = 0.6f + 0.4f * sinf(waveTime * 4.f);
+                    dl->AddRect(rowRectMin, rowRectMax,
+                        IM_COL32((int)(50*pulse), (int)(220*pulse), (int)(80*pulse), (int)(200*pulse)), 8.f, 0, 2.f);
+                } else {
+                    dl->AddRectFilled(rowRectMin, rowRectMax, IM_COL32(30, 35, 48, 80), 8.f);
+                }
+
+                ImGui::SetCursorScreenPos(rowStart);
+                ImGui::Dummy(ImVec2(8.f, 0)); ImGui::SameLine();
+                ImVec2 avatarPos = ImGui::GetCursorScreenPos();
+                avatarPos.y += 8.f;
+                std::string pRole = GetUserRole(p.username);
+                DrawAvatar({avatarPos.x + 18.f, avatarPos.y + 18.f}, 18.f, p.username, pRole);
+
+                // WebRTC connect state ring
+                if (p.connected) {
+                    dl->AddCircle({avatarPos.x + 18.f, avatarPos.y + 18.f}, 20.f,
+                        IM_COL32(60, 220, 80, 180), 0, 2.f);
+                }
+
+                ImGui::Dummy(ImVec2(44.f, 44.f)); ImGui::SameLine();
+                ImGui::BeginGroup();
+                ImVec4 nameColor = {1.f, 1.f, 1.f, 1.f};
+                if      (pRole == "RBG")   nameColor = {1.f, 0.6f, 0.f, 1.f};
+                else if (pRole == "Owner") nameColor = {0.8f, 0.2f, 0.8f, 1.f};
+                else if (pRole == "Admin") nameColor = {1.f, 0.3f, 0.3f, 1.f};
+                else if (pRole == "Mod")   nameColor = {0.2f, 0.8f, 0.2f, 1.f};
+                ImGui::TextColored(nameColor, "%s", p.username.c_str());
+
+                // Status icons (Fluxer: mute/deafen state)
+                if (p.isMuted)    ImGui::TextColored(ImVec4(0.9f,0.5f,0.2f,1.f), "  [SUSTURULDU]");
+                else if (p.isSpeaking) ImGui::TextColored(ImVec4(0.3f,0.9f,0.3f,1.f), "  [KONUSUYOR]");
+                else              ImGui::TextDisabled("  [SESSIZ]");
+                ImGui::EndGroup();
+
+                ImGui::SetCursorScreenPos(rowEnd);
+                ImGui::Dummy(ImVec2(0, 4));
+            }
+
+            if (participants.empty()) {
+                ImGui::Dummy(ImVec2(0, 30));
+                ImGui::SetCursorPosX((ImGui::GetContentRegionAvail().x -
+                    ImGui::CalcTextSize("Odada baska kimse yok.").x) * 0.5f);
+                ImGui::TextDisabled("Odada baska kimse yok.");
+            }
+
+            // ---- Controls bar (Fluxer: microphone.setEnabled / localAudio.deafenRequested / disconnect) ----
+            ImGui::Dummy(ImVec2(0, 20));
+            ImGui::Separator();
+            ImGui::Dummy(ImVec2(0, 8));
+
+            float btnW = (ImGui::GetContentRegionAvail().x - 16.f) / 3.f;
+
+            // Mute toggle (Fluxer: microphone.setEnabled)
+            if (selfMuted) ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.7f,0.35f,0.1f,0.9f));
+            else           ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.15f,0.4f,0.7f,0.7f));
+            if (ImGui::Button(selfMuted ? "Mikrofon Ac" : "Sustur", ImVec2(btnW, 38))) {
+                voice.SetMuted(!selfMuted);
+                AddToast(!selfMuted ? "Mikrofon kapatildi" : "Mikrofon acildi", ToastType::INFO);
+            }
+            ImGui::PopStyleColor();
+            ImGui::SameLine();
+
+            // Deafen toggle (Fluxer: localAudio.deafenRequested)
+            if (selfDeafened) ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.4f,0.2f,0.6f,0.9f));
+            else              ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.14f,0.14f,0.22f,0.8f));
+            if (ImGui::Button(selfDeafened ? "Sagligi Kapat" : "Kulakligi Kapat", ImVec2(btnW, 38))) {
+                voice.SetDeafened(!selfDeafened);
+                AddToast(!selfDeafened ? "Kulalik kapatildi" : "Kulalik acildi", ToastType::INFO);
+            }
+            ImGui::PopStyleColor();
+            ImGui::SameLine();
+
+            // Leave room (Fluxer: connection.disconnect)
+            ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.75f,0.15f,0.15f,0.9f));
+            ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.9f,0.2f,0.2f,1.f));
+            if (ImGui::Button("Odadan Cik", ImVec2(btnW, 38))) {
+                voice.LeaveRoom();
+            }
+            ImGui::PopStyleColor(2);
+
+            // Screen share (only if in call mode)
+            bool isSharing = voice.IsScreenSharing();
+            if (isSharing || voice.IsReceivingScreen()) {
+                ImGui::Dummy(ImVec2(0, 8));
+                ImGui::Separator();
+                ImGui::Dummy(ImVec2(0, 6));
+
+                if (voice.IsReceivingScreen() && g_ScreenShareTexture.DescriptorSet != VK_NULL_HANDLE) {
+                    float frameW = 640.f, frameH = 360.f;
+                    float availW = ImGui::GetContentRegionAvail().x;
+                    if (availW < frameW) { frameW = availW - 20.f; frameH = frameW * (270.f / 480.f); }
+                    ImGui::Image((ImTextureID)g_ScreenShareTexture.DescriptorSet, ImVec2(frameW, frameH));
+                }
+            }
         }
         ImGui::EndChild();
 
-        // Right side: dial list
+        // ---- Right panel: Online users + per-participant volume ----
         ImGui::SameLine();
-        ImGui::BeginChild("##VoiceContactsList", ImVec2(252, 0), true, ImGuiWindowFlags_NoScrollbar);
-        ImGui::Text("Baglanti Listesi");
+        ImGui::BeginChild("##VoiceRightPanel", ImVec2(272, 0), true, ImGuiWindowFlags_NoScrollbar);
+
+        ImGui::Text("Cevrimici Uyeler");
         ImGui::Separator();
         ImGui::Dummy(ImVec2(0, 4));
 
-        std::vector<std::string> targetUsers;
         for (const auto& u : ClientChat::GetInstance().GetOnlineUsers()) {
-            if (u.username != username) {
-                targetUsers.push_back(u.username);
+            if (u.username == username) continue;
+            bool isInRoom = false;
+            float vol = 1.0f;
+            for (const auto& p : participants) {
+                if (p.username == u.username) { isInRoom = true; vol = p.volume; break; }
             }
+
+            ImGui::BeginGroup();
+            ImVec4 nc = {0.8f,0.8f,0.8f,1.f};
+            if      (u.role == "RBG")   nc = {1.f,0.6f,0.f,1.f};
+            else if (u.role == "Owner") nc = {0.8f,0.2f,0.8f,1.f};
+            else if (u.role == "Admin") nc = {1.f,0.3f,0.3f,1.f};
+            else if (u.role == "Mod")   nc = {0.2f,0.8f,0.2f,1.f};
+
+            if (isInRoom) {
+                ImGui::TextColored({0.3f,0.9f,0.4f,1.f}, "  ");
+                ImGui::SameLine();
+            }
+            ImGui::TextColored(nc, "%s", u.username.c_str());
+
+            // Per-participant volume slider (Fluxer: participantVolume.set)
+            if (isInRoom) {
+                std::string volId = "##vol_" + u.username;
+                ImGui::PushStyleColor(ImGuiCol_SliderGrab, ImVec4(0.2f,0.7f,1.f,1.f));
+                ImGui::PushItemWidth(200.f);
+                if (ImGui::SliderFloat(volId.c_str(), &vol, 0.f, 2.f, "Ses: %.1fx")) {
+                    voice.SetParticipantVolume(u.username, vol);
+                }
+                ImGui::PopItemWidth();
+                ImGui::PopStyleColor();
+            }
+            ImGui::EndGroup();
+            ImGui::Separator();
         }
 
-        if (targetUsers.empty()) {
-            ImGui::TextDisabled("Arayacak cevrimici üye yok.");
-        } else {
-            for (const auto& target : targetUsers) {
-                ImGui::AlignTextToFramePadding();
-                ImGui::TextColored(ImVec4(1.f, 1.f, 1.f, 1.f), "%s", target.c_str());
-                ImGui::SameLine(ImGui::GetWindowWidth() - 75.f);
-                
-                std::string callBtnId = "Ara##" + target;
-                ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.15f, 0.6f, 0.3f, 0.8f));
-                ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.2f, 0.7f, 0.35f, 1.0f));
-                if (ImGui::SmallButton(callBtnId.c_str())) {
-                    ClientVoice::GetInstance().StartCall(target);
-                    AddToast("Arama baslatiliyor...", ToastType::INFO);
-                }
-                ImGui::PopStyleColor(2);
+        if (inRoom) {
+            ImGui::Dummy(ImVec2(0, 8));
+            // Ekran paylaşımı (legacy 1:1 uyumluluk)
+            bool isSharing = voice.IsScreenSharing();
+            ImGui::PushStyleColor(ImGuiCol_Button, isSharing ? ImVec4(0.2f,0.6f,0.3f,0.8f) : ImVec4(0.14f,0.14f,0.2f,0.8f));
+            if (ImGui::Button(isSharing ? "Yayini Kapat" : "Ekran Paylas", ImVec2(240.f, 34.f))) {
+                voice.SetScreenSharing(!isSharing);
+                AddToast(!isSharing ? "Ekran paylasimi baslatildi" : "Sonlandirildi", ToastType::INFO);
             }
+            ImGui::PopStyleColor();
         }
+
         ImGui::EndChild();
     }
+
+
 
     // ============================================================
     //  TAB 3: MODERATION PANEL (Mod+)

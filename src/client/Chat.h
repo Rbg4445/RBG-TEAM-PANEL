@@ -48,6 +48,7 @@ public:
     void SendChatMessage(const std::string& content, int64_t replyToId = 0);
     void SendKick(const std::string& username);
     void SendVoiceSignal(const nlohmann::json& data);
+    void SendVoiceRoomAction(const nlohmann::json& data);  // Fluxer: room join/leave/mute
     void SendPrivateMessage(const std::string& toUser, const std::string& content);
     void SendGetDMHistory(const std::string& withUser);
     void SendChangeAvatar(int avatarId);
@@ -56,6 +57,10 @@ public:
     // Voice signal callback
     using VoiceSignalCallback = std::function<void(const nlohmann::json&)>;
     void SetVoiceSignalCallback(VoiceSignalCallback cb) { m_voiceSignalCallback = cb; }
+
+    // Voice room event callback (Fluxer: room.participantJoined/Left/mute_state)
+    using VoiceRoomCallback = std::function<void(const nlohmann::json&)>;
+    void SetVoiceRoomCallback(VoiceRoomCallback cb) { m_voiceRoomCallback = cb; }
 
     // Getters for UI
     bool IsConnected() const { return m_peer != nullptr && m_isConnected; }
@@ -104,6 +109,9 @@ private:
     std::vector<PrivateMessage> m_privateMessages;
     std::vector<std::string> m_typingUsers;
     int m_myAvatarId = 0;
+
+    // Voice room
+    VoiceRoomCallback m_voiceRoomCallback;
 };
 
 #endif // CLIENT_CHAT_H

@@ -267,6 +267,11 @@ void ClientChat::HandlePacket(const std::string& data) {
             if (m_voiceSignalCallback) {
                 m_voiceSignalCallback(payload);
             }
+        } else if (type == "voice_room") {
+            // Fluxer: room.participantJoined / Left / mute_state / room_state
+            if (m_voiceRoomCallback) {
+                m_voiceRoomCallback(payload);
+            }
         } else if (type == "register_response") {
             bool success = payload["success"];
             m_registerSuccess = success;
@@ -310,4 +315,8 @@ void ClientChat::SendTypingStatus(bool isTyping) {
         {"is_typing", isTyping}
     };
     SendPacket("typing_status", payload);
+}
+
+void ClientChat::SendVoiceRoomAction(const nlohmann::json& data) {
+    SendPacket("voice_room_action", data);
 }

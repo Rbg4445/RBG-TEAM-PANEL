@@ -3,6 +3,7 @@
 
 #include <string>
 #include <map>
+#include <set>
 #include <enet/enet.h>
 #include <nlohmann/json.hpp>
 
@@ -11,6 +12,10 @@ struct ClientSession {
     std::string role;
     bool authenticated = false;
     int avatar_id = 0;
+    // Voice room state (Fluxer: VoiceEngineV2GatewayVoiceState)
+    bool inVoiceRoom   = false;
+    bool voiceMuted    = false;
+    bool voiceDeafened = false;
 };
 
 class ServerChat {
@@ -42,10 +47,12 @@ private:
     void HandleGetDMHistory(ENetPeer* peer, const nlohmann::json& data);
     void HandleChangeAvatar(ENetPeer* peer, const nlohmann::json& data);
     void HandleTypingStatus(ENetPeer* peer, const nlohmann::json& data);
+    void HandleVoiceRoomAction(ENetPeer* peer, const nlohmann::json& payload);
     void SendPendingUsersListToAdmins();
 
     ENetHost* m_server = nullptr;
     std::map<ENetPeer*, ClientSession> m_sessions;
+    std::set<ENetPeer*> m_voiceRoom;  // active voice room participants
 };
 
 #endif // SERVER_CHAT_H

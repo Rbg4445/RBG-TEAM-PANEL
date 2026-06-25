@@ -136,6 +136,8 @@ void ServerChat::HandlePacket(ENetPeer* peer, const std::string& data) {
             HandleKick(peer, payload);
         } else if (type == "voice_signal") {
             HandleVoiceSignal(peer, payload);
+        } else if (type == "voice_room_action") {
+            HandleVoiceRoomAction(peer, payload);
         } else if (type == "private_msg") {
             HandlePrivateMessage(peer, payload);
         } else if (type == "get_dm_history") {
@@ -530,4 +532,93 @@ void ServerChat::HandleTypingStatus(ENetPeer* peer, const nlohmann::json& payloa
     };
 
     BroadcastMessage("typing_status", forward, peer);
+}
+
+// ---------------------------------------------------------------
+// HandleVoiceRoomAction
+// Fluxer: room.participantJoined / Left / mute_state / deaf_state
+// ---------------------------------------------------------------
+void ServerChat::HandleVoiceRoomAction(ENetPeer* peer, const nlohmann::json& payload) {
+    auto it = m_sessions.find(peer);
+    if (it == m_sessions.end() || !it->second.authenticated) return;
+
+    std::string username = it->second.username;
+    std::string action   = payload.value("action", "");
+
+    if (action == "join") {
+        m_voiceRoom.insert(peer);
+        it->second.inVoiceRoom   = true;
+        it->second.voiceMuted    = false;
+        it->second.voiceDeafened = false;
+
+        // Send current room state to the joining user
+        nlohmann::json participants = nlohmann::json::array();
+        for (ENetPeer* roomPeer : m_voiceRoom) {
+            auto rit = m_sessions.find(roomPeer);
+            if (rit != m_sessions.end() && roomPeer != peer) {
+                participants.push_back({
+                    {"username", rit->second.username},
+                    {"muted",    rit->second.voiceMuted},
+                    {"deafened", rit->second.voiceDeafened}
+                });
+            }
+        }
+        nlohmann::json roomState = {
+            {"action", "room_state"},
+            {"participants", participants}
+        };
+        SendPacket(peer, "voice_room", roomState);
+
+        // Notify everyone else (Fluxer: room.participantJoined)
+        nlohmann::json joined = {
+            {"action",   "participant_joined"},
+            {"username", username}
+        };
+        for (ENetPeer* roomPeer : m_voiceRoom) {
+            if (roomPeer != peer) {
+                auto rit = m_sessions.find(roomPeer);
+                if (rit != m_sessions.end() && rit->second.authenticated) {
+                    SendPacket(roomPeer, "voice_room", joined);
+                }
+            }
+        }
+
+    } else if (action == "leave") {
+        m_voiceRoom.erase(peer);
+        it->second.inVoiceRoom = false;
+
+        // Notify everyone (Fluxer: room.participantLeft)
+        nlohmann::json left = {
+            {"action",   "participant_left"},
+            {"username", username}
+        };
+        for (ENetPeer* roomPeer : m_voiceRoom) {
+            auto rit = m_sessions.find(roomPeer);
+            if (rit != m_sessions.end() && rit->second.authenticated) {
+                SendPacket(roomPeer, "voice_room", left);
+            }
+        }
+
+    } else if (action == "mute_state") {
+        bool muted = payload.value("muted", false);
+        it->second.voiceMuted = muted;
+        // Fluxer: microphone.setEnabled broadcast
+        nlohmann::json muteUpdate = {
+            {"action",   "mute_state"},
+            {"username", username},
+            {"muted",    muted}
+        };
+        BroadcastMessage("voice_room", muteUpdate);
+
+    } else if (action == "deaf_state") {
+        bool deafened = payload.value("deafened", false);
+        it->second.voiceDeafened = deafened;
+        // Fluxer: localAudio.deafenRequested broadcast
+        nlohmann::json deafUpdate = {
+            {"action",    "deaf_state"},
+            {"username",  username},
+            {"deafened",  deafened}
+        };
+        BroadcastMessage("voice_room", deafUpdate);
+    }
 }
